@@ -449,35 +449,27 @@ class VentanaPrincipal(tk.Tk):
             for detection in out:
                 scores = detection[5:]
                 class_id = np.argmax(scores)
+                # confidence = scores[class_id]
+                # if confidence > 0.5 and self.classes[class_id] == "cell phone":
                 if self.classes[class_id] == "cell phone":
-                    # confidence = scores[class_id]
-                    # if confidence > 0.5:
                     self.okk = 10
-                else:
-                    if self.giro_cara > 2:
-                        self.okk = 2
-                    else:
-                        self.giro_cara = self.giro_cara + 1
-        # for out in self.outs:
-        #     for detection in out:
-        #         scores = detection[5:]
-        #         class_id = np.argmax(scores)
-        #         confidence = scores[class_id]
-        #         if confidence > 0.5 and self.classes[class_id] == "cell phone":
-        #             self.okk = 10
-        #         else:
-        #             self.okk = 2
+                # else:
+                #     if self.giro_cara > 20:
+                #         print(self.giro_cara)
+                #         self.okk = 2
+                #     else:
+                #         self.giro_cara = self.giro_cara + 1
 
-        # if self.okk != 10:
-        #     shape = self.predictor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), rect)
-        #     # distancia entre nariz y oreja izquierda
-        #     distancia = math.sqrt((shape.part(33).x - shape.part(16).x) ** 2 + (shape.part(33).y - shape.part(16).y) ** 2)
-        #     if self.giro_cara == 0: 
-        #         self.giro_cara = distancia
-        #     else:
-        #         self.texto_informativo(frame,'Gire la cara hacia la izquierda por favor..')
-        #     if distancia < (self.giro_cara - 20): # giro cara a la izquierda
-        #         self.okk = 2
+        if self.okk != 10:
+            shape = self.predictor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), rect)
+            # distancia entre nariz y oreja izquierda
+            distancia = math.sqrt((shape.part(33).x - shape.part(16).x) ** 2 + (shape.part(33).y - shape.part(16).y) ** 2)
+            if self.giro_cara == 0: 
+                self.giro_cara = distancia
+            else:
+                self.texto_informativo(frame,'Gire la cara hacia la izquierda por favor..')
+            if distancia < (self.giro_cara - 20): # giro cara a la izquierda
+                self.okk = 2
     
     def limpiar_foto(self):
         self.registros()
@@ -513,32 +505,20 @@ class VentanaPrincipal(tk.Tk):
                 face_locations = fr.face_locations(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
                 for i,(top, right, bottom, left) in enumerate(face_locations):
                     if (bottom - top) < 130:
-                        if (self.okk == 0):
+                        if self.okk == 0:
                             self.okk = 1
                             self.cara = frame
                         else:
                             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                            self.prueba_vida(frame,'')
-                            # threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
+                            # self.prueba_vida(frame,'')
+                            threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
                         break
-                    # if ((bottom - top) < 120):
-                    #     self.texto_informativo(frame,'Acerque la cara hacia la camara.')
-                    #     self.okk = 0
-                    #     self.giro_cara = 0
-                    # if ((bottom - top) > 250):
-                    #     self.okk = 0
-                    #     self.giro_cara = 0
-                    #     self.texto_informativo(frame,'Aleje la cara de la camara.') 
                     if self.okk == 1:
-                        self.prueba_vida(frame,'')
-                        # threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
+                        threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
+                        # self.prueba_vida(frame,'')
                         break
                     cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                    # if ((bottom - top) < 170) and ((bottom - top) > 150):
-                    #     self.texto_informativo(frame,'Acerque la cara hacia la camara.')
-                    # elif ((bottom - top) < 150) and ((bottom - top) > 120):
-                    #     self.texto_informativo(frame,'Acerque la cara hacia la camara.')
-                    
+
                     if ((bottom - top) > 130) :
                         self.texto_informativo(frame,'Aleje la cara de la camara.')                                              
                 else:
@@ -547,7 +527,6 @@ class VentanaPrincipal(tk.Tk):
                     cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
                     cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
                     cv2.imshow('Reconocimiento facial', frame)
-                # key = cv2.waitKey(1) & 0xFF #agregar al if key == 27 or para salir del video con Esc
 
                 if (self.intentosFacial > 3):
                     self.intentosFacial = 0
