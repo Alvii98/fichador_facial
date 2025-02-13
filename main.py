@@ -1,26 +1,28 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
 import cv2 # opencv-python==4.9.0.80
 import numpy as np # numpy==1.26.3
 import face_recognition as fr # dlib-19.24.99-cp312-cp312-win_amd64.whl luego install face_recognition
-import dlib
+# import dlib
 import os
 import time
 from datetime import datetime
 import locale
 import threading
-import math
+# import math
 import pandas as pd
 import requests
+# from requests.auth import HTTPBasicAuth
 import re
+import base64
 # PARA EXE: pyinstaller --onefile --windowed --add-data "shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "mmod_human_face_detector.dat;face_recognition_models/models" main.py
 # ejecutar para actualizar dependencias  pip install --upgrade setuptools
 class VentanaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Fichador facial 1.3")
+        self.title("Fichador facial 2.0")
         self.ancho = 780
         self.alto = 480
         self.anchoVideo = 620
@@ -30,7 +32,7 @@ class VentanaPrincipal(tk.Tk):
         self.intentosFacial = 0
         self.notificacion = True
         self.cargar_video = True
-        self.cara = ''
+        self.cara = None
         self.xV = (self.winfo_screenwidth() // 2) - (self.anchoVideo // 2)
         self.yV = (self.winfo_screenheight() // 2) - (self.altoVideo // 2) - 100
         # Coordenadas para centrar app
@@ -48,23 +50,21 @@ class VentanaPrincipal(tk.Tk):
         self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
         self.menu = ImageTk.PhotoImage(file="img/menu.png")
         # Cargar el modelo preentrenado (por ejemplo, un modelo YOLO)
-        self.net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
-        layer_names = self.net.getLayerNames()
-        self.output_layers = [layer_names[i - 1] for i in self.net.getUnconnectedOutLayers()]
+        self.net = None
         self.outs = None
-        # Cargar las clases
-        with open("coco.names", "r") as f:
-            self.classes = [line.strip() for line in f.readlines()]
-
+        self.classes = None
+        threading.Thread(target=self.cargar_lib).start()
         self.menu_desplegado = False
-        self.api = 'https://www1.dnm.gov.ar/anexo/api.php'
+        self.api = 'https://estudio6.site/fichado/api.php'
+        # self.api = 'https://www1.dnm.gov.ar/anexo/api.php'
         self.api_user = 'api_user'
         self.api_pass = 'api_password'
         self.foto_api = ''
-        self.verificar_api()
+        self.nombre_agente = ''
+        # self.verificar_api()
         self.predictor = ''
         # CARGO LIBRERIA Y OBTENGO LUGAR POR ESO LO COMENTE ARRIBA
-        threading.Thread(target=self.cargar_lib).start()
+        # threading.Thread(target=self.cargar_lib).start()
         self.giro_cara = 0
         self.okk = 0
         self.crear_widgets()
@@ -89,13 +89,29 @@ class VentanaPrincipal(tk.Tk):
             return True
 
     def cargar_lib(self):
-        self.predictor = dlib.shape_predictor('face_recognition/shape_predictor_68_face_landmarks.dat')
+        # Cargar el modelo preentrenado (modelo YOLO)
+        self.net = cv2.dnn.readNet("libs/yolov3.weights", "libs/yolov3.cfg")
+        layer_names = self.net.getLayerNames()
+        self.output_layers = [layer_names[i - 1] for i in self.net.getUnconnectedOutLayers()]
+        self.outs = None
+        # Cargar las clases
+        with open("libs/coco.names", "r") as f:
+            self.classes = [line.strip() for line in f.readlines()]
 
-    def insertar_registro(self, agente, archivo):
+        # self.predictor = dlib.shape_predictor('face_recognition/shape_predictor_68_face_landmarks.dat')
+
+    def insertar_registro(self, documento, archivo):
         cruce = ''
+        observacion = ''
         if self.documento2.get().strip() != '':
             fecha_obj = datetime.strptime(self.fechaYHora.get(), '%d/%m/%Y %H:%M:%S')
             fecha = fecha_obj.strftime('%Y-%m-%d %H:%M:%S')
+            if self.cruce.get().strip() != 'ENTRADA' and self.cruce.get().strip() != 'SALIDA':
+                return self.notificaciones('El cruce tiene que ser ENTRADA o SALIDA.','#df2626')
+            cruce = self.cruce.get().strip()
+
+            if self.observacion.get("1.0", tk.END).strip() != '':
+                observacion = self.observacion.get("1.0", tk.END).strip()
         else:
             fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -104,15 +120,17 @@ class VentanaPrincipal(tk.Tk):
 
         data = {
             'tipo': 'INSERTAR REGISTRO',
-            'documento': agente,
+            'documento': documento,
+            'agente': self.nombre_agente,
             'cruce': cruce,
+            'observacion': observacion,
             'fecha': fecha,
             'lugar': self.lugar.get(),
             'foto': blob_data
         }
-        self.verificar_api()
+        # self.verificar_api()
         try:
-            response = requests.post(self.api, data=data, auth=(self.api_user, self.api_pass))
+            response = requests.post(self.api, data=data)
 
             # print(response)
             if response.json()['status'] == 'success':
@@ -124,15 +142,19 @@ class VentanaPrincipal(tk.Tk):
 
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error de sistema", "Error al intentar conectar con la API, intente mas tarde.")
-        
+    
+    def borrar_registros(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
     def traer_registros(self, agente):
         data = {
             'tipo': 'REGISTROS AGENTE',
             'documento': agente
         }
-        self.verificar_api()
+        # self.verificar_api()
         try:
-            response = requests.post(self.api, data=data, auth=(self.api_user, self.api_pass))
+            response = requests.post(self.api, data=data)
 
             if response.json()['status'] == 'success':
                 registros = response.json()['data']
@@ -155,16 +177,21 @@ class VentanaPrincipal(tk.Tk):
 
     def exportar_excel(self):
         rows = []
-        for row_id in self.tree.get_children():
-            row = self.tree.item(row_id)['values']
-            rows.append(row)
-
-        df = pd.DataFrame(rows, columns=("Agente", "Fecha", "Cruce"))
-        fecha = datetime.now().strftime('%Y%m%d%H%M')
-        archivo = f"registros_{fecha}.xlsx"
-        df.to_excel(archivo, index=False)
-        os.startfile(archivo)
-        self.notificaciones(f'Exportado correctamente {archivo}','#35c82b')
+        try:
+            for row_id in self.tree.get_children():
+                row = self.tree.item(row_id)['values']
+                rows.append(row)
+            if not rows:
+                self.notificaciones('No hay datos para exportar.', '#ff0000')
+            else:
+                df = pd.DataFrame(rows, columns=("Agente", "Fecha", "Cruce"))
+                fecha = datetime.now().strftime('%Y%m%d%H%M')
+                archivo = f"registros_{fecha}.xlsxd"
+                df.to_excel(archivo, index=False)
+                os.startfile(archivo)
+                self.notificaciones(f'Exportado correctamente {archivo}','#35c82b')
+        except Exception as e:
+            self.notificaciones('Ocurrio un error al exportar.', '#ff0000')
 
     def validar_fecha_hora(self, event=None, *args):
         entrada = self.fecha_hora_var.get()
@@ -266,8 +293,14 @@ class VentanaPrincipal(tk.Tk):
         self.frameDocRegistros = tk.Frame(self.frameRegistros, bg="#fff8e6")
         self.frameDocRegistros.pack(side=tk.TOP, pady=5)
 
-        boton = tk.Button(self.frameRegistros, text="Exportar a Excel", cursor="hand2", bg="green", fg="#fff8e6", command=self.exportar_excel)
-        boton.pack(side=tk.TOP, pady=5)
+        self.frameBotRegistros = tk.Frame(self.frameRegistros, bg="#fff8e6")
+        self.frameBotRegistros.pack(side=tk.TOP, pady=5)
+
+        boton = tk.Button(self.frameBotRegistros, text="Exportar a Excel", cursor="hand2", bg="green", fg="#fff8e6", command=self.exportar_excel)
+        boton.grid(row=0, column=0, sticky="W", padx=5)
+
+        boton2 = tk.Button(self.frameBotRegistros, text="Eliminar registros", cursor="hand2", bg="red", fg="#fff8e6", command=self.borrar_registros)
+        boton2.grid(row=0, column=1, sticky="W", padx=5)
         
         self.lblDoc3 = tk.Label(self.frameDocRegistros, text="Documento:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
         self.lblDoc3.grid(sticky="W")
@@ -455,38 +488,54 @@ class VentanaPrincipal(tk.Tk):
         self.lblNot.pack(side="top", pady=10)
         threading.Thread(target=self.eliminarNotificacion).start()
 
-    def prueba_vida(self,frame,rect):
+    def prueba_vida(self, frame):
+        # Redimensionar la imagen para asegurar que cubra toda la imagen
+        height, width = frame.shape[:2]
+        new_width = 640
+        new_height = int((new_width / width) * height)
+        resized_frame = cv2.resize(frame, (new_width, new_height))
+
         # Detectar objetos
-        # blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
-        blob = cv2.dnn.blobFromImage(frame, 0.00392, (320, 320), (0, 0, 0), True, crop=False)
+        blob = cv2.dnn.blobFromImage(resized_frame, 0.00392, (new_width, new_height), (0, 0, 0), True, crop=False)
         self.net.setInput(blob)
         self.outs = self.net.forward(self.output_layers)
+
         # Mostrar información en la pantalla
         for out in self.outs:
             for detection in out:
                 scores = detection[5:]
                 class_id = np.argmax(scores)
-                # confidence = scores[class_id]
-                # if confidence > 0.5 and self.classes[class_id] == "cell phone":
-                if self.classes[class_id] == "cell phone":
-                    self.okk = 10
-                # else:
+                confidence = scores[class_id]
+                if confidence > 0.5:
+                    if self.classes[class_id] == "cell phone" or self.classes[class_id] == "credential" or self.classes[class_id] == "dni":
+                        self.okk = 10
+
+
+        print(scores[class_id])
+        print(self.classes[class_id])
+
+        if self.okk != 11 and self.okk != 12 and self.okk != 13:
+            self.okk = 11 # si es 11 paso la primera prueba
+        elif self.okk == 11:
+            self.okk = 12 # si es 12 paso la segunda prueba
+        else:
+            self.okk = 13
                 #     if self.giro_cara > 20:
                 #         print(self.giro_cara)
                 #         self.okk = 2
                 #     else:
                 #         self.giro_cara = self.giro_cara + 1
 
-        if self.okk != 10:
-            shape = self.predictor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), rect)
-            # distancia entre nariz y oreja izquierda
-            distancia = math.sqrt((shape.part(33).x - shape.part(16).x) ** 2 + (shape.part(33).y - shape.part(16).y) ** 2)
-            if self.giro_cara == 0: 
-                self.giro_cara = distancia
-            else:
-                self.texto_informativo(frame,'Gire la cara hacia la izquierda por favor..')
-            if distancia < (self.giro_cara - 20): # giro cara a la izquierda
-                self.okk = 2
+        # if self.okk != 10:
+        #     shape = self.predictor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), rect)
+        #     # distancia entre nariz y oreja izquierda
+        #     distancia = math.sqrt((shape.part(33).x - shape.part(16).x) ** 2 + (shape.part(33).y - shape.part(16).y) ** 2)
+        #     if self.giro_cara == 0: 
+        #         self.giro_cara = distancia
+        #     else:
+        #         self.texto_informativo(frame,'Gire la cara hacia la izquierda por favor..')
+        #     if distancia < (self.giro_cara - 20): # giro cara a la izquierda
+        #         self.okk = 2
     
     def limpiar_foto(self):
         self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
@@ -515,7 +564,16 @@ class VentanaPrincipal(tk.Tk):
             documento = self.documento.get()   
             ret, frame = cap.read()
             if ret:
+
                 cv2.namedWindow('Reconocimiento facial', cv2.WINDOW_NORMAL)
+                if self.okk == 0 or self.okk == 1:
+                    cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
+                    cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
+                    cv2.imshow('Reconocimiento facial', frame)
+                    if self.okk == 0: self.okk = 1
+                    else: self.okk = 3
+                    return self.after(10, self.validar_fichado)
+
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:
                     cv2.destroyAllWindows()
@@ -523,28 +581,43 @@ class VentanaPrincipal(tk.Tk):
                     self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
                     self.foto.config(image=self.img)
                     return False
-                face_locations = fr.face_locations(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-                for i,(top, right, bottom, left) in enumerate(face_locations):
-                    if (bottom - top) < 130:
-                        if self.okk == 0:
-                            self.okk = 1
-                            self.cara = frame
-                        else:
-                            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                            # self.prueba_vida(frame,'')
-                            threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
-                        break
-                    if self.okk == 1:
-                        threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
-                        # self.prueba_vida(frame,'')
-                        break
-                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
 
-                    if ((bottom - top) > 130) :
-                        self.texto_informativo(frame,'Aleje la cara de la camara.')                                              
+                face_locations = fr.face_locations(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+
+                for i,(top, right, bottom, left) in enumerate(face_locations):
+                    if self.okk == 10:
+                        break # SI ES IGUAL A 10 DETECTO UN TELEFONO Y 12 YA PASO LAS PRUEBAS
+                    if ((bottom - top) < 130) and self.okk != 11 and self.okk != 12:
+                        self.texto_informativo(frame,'Acerque la cara a la camara.')
+                        # cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                        break
+                    elif ((bottom - top) > 130) and self.okk != 11 and self.okk != 12:
+                        if self.cara is None:
+                            self.cara = frame
+                            cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
+                            cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
+                            cv2.imshow('Reconocimiento facial', frame)
+                        else:
+                            self.texto_informativo(frame,'Aleje la cara de la camara.')
+
+                        threading.Thread(target=self.prueba_vida(frame)).start()
+                        break
+                    elif ((bottom - top) > 130) and self.okk == 11  and self.okk == 12:
+                        self.texto_informativo(frame,'Aleje la cara de la camara.')
+                        break
+                    elif ((bottom - top) < 130):
+                        threading.Thread(target=self.prueba_vida(frame)).start()
+                        break
+                    # cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+
+                    # if ((bottom - top) > 130) and self.okk != 11:
+                    #     self.texto_informativo(frame,'Aleje la cara de la camara.')
+                    # elif ((bottom - top) > 130):
+                    #     self.texto_informativo(frame,'Aleje la cara de la camara.')
+
                 else:
-                    self.okk = 0
-                    self.giro_cara = 0
+                    # self.okk = 0
+                    # self.giro_cara = 0
                     cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
                     cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
                     cv2.imshow('Reconocimiento facial', frame)
@@ -570,7 +643,7 @@ class VentanaPrincipal(tk.Tk):
                     self.foto.config(image=self.img)
                     self.notificaciones('Detectamos un objeto inapropiado, vuelva a intentar.','#df2626')
                     cv2.destroyAllWindows()
-                elif self.okk == 2:
+                elif self.okk == 13:
                     self.okk = 0
                     self.giro_cara = 0
 
@@ -605,25 +678,27 @@ class VentanaPrincipal(tk.Tk):
                             self.fechaYHora.delete(0, tk.END)
                             self.observacion.delete("1.0", tk.END)
 
-                            if self.documento3.get().strip() != '':
-                                self.traer_registros(documento)
-                            else:
-                                self.insertar_registro(documento, path)
+                            # if self.documento3.get().strip() != '':
+                            #     self.traer_registros(documento)
+                            # else:
+                            #     self.insertar_registro(documento, path)
+
                             # if fecha != '' and cruce != '':
                             #     # self.mensajes("Fichado correctamente.","#35c82b")
                             #     print(f"Rostro detectado: {documento}")
                             #     self.notificaciones(f'Fichado correctamente, {cruce} {fecha}','#35c82b')
-                            self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-                            self.foto.config(image=self.img)
+                            
+                            # self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+                            # self.foto.config(image=self.img)
                             # threading.Thread(target=self.limpiar_foto).start()
                         else:
                             self.intentosFacial = self.intentosFacial + 1
                             texto = "Rostro detectado: Desconocido"
                             self.texto_informativo(frame,texto)
                             print(f"Rostro detectado: Desconocido intentos: {self.intentosFacial}")
-                            self.after(2, self.validar_fichado)
+                            return self.after(10, self.validar_fichado)
                 else:
-                    self.after(10, self.validar_fichado)
+                    return self.after(10, self.validar_fichado)
             else:
                 cap = cv2.VideoCapture(0)
                 if cap.isOpened():
@@ -645,15 +720,15 @@ class VentanaPrincipal(tk.Tk):
             self.documento2.delete(0, tk.END)
             self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
             self.foto.config(image=self.img)
-            self.notificaciones('Ingrese el numero de documento.','#df2626')
+            return self.notificaciones('Ingrese el numero de documento.','#df2626')
         else:
             if self.documento2.get().strip() != '':
                 if self.cruce.get().strip() != 'ENTRADA' and self.cruce.get().strip() != 'SALIDA':
-                    self.notificaciones('El cruce tiene que ser ENTRADA o SALIDA.','#df2626')
                     error = 1
+                    return self.notificaciones('El cruce tiene que ser ENTRADA o SALIDA.','#df2626')
                 elif self.observacion.get("1.0", tk.END).strip() == '':
-                    self.notificaciones('Debe poner una observación sobre el fichado.','#df2626')
                     error = 1
+                    return self.notificaciones('Debe poner una observación sobre el fichado.','#df2626')
 
                 if error == 0:
                     try:
@@ -661,24 +736,35 @@ class VentanaPrincipal(tk.Tk):
                         self.lblValidFecha.configure(text='Formato de fecha correcto.')
                     except ValueError:
                         error = 1
-                        self.notificaciones('El formato de la fecha debe ser DD/MM/AAAA HH:MM:SS.','#df2626')
                         self.lblValidFecha.configure(text='El formato de fecha y hora tiene que ser DD/MM/AAAA HH:MM:SS.')
+                        return self.notificaciones('El formato de la fecha debe ser DD/MM/AAAA HH:MM:SS.','#df2626')
             
             if error == 0:
                 data = {
                     'tipo': 'VALIDAR AGENTE',
                     'documento': documento
                 }
-                self.verificar_api()
+                return self.validar_fichado()
+
+                # self.verificar_api()
                 try:
-                    response = requests.post(self.api, data=data, auth=(self.api_user, self.api_pass))
-                    if response.json()['status'] == 'error':
-                        respuesta = messagebox.askyesno("Confirmar", f"El agente {documento} no esta registrado ¿Desea registrar este agente?")
-                        if respuesta:
-                            self.foto_api = response.json()['data'][0]['foto']
-                            self.validar_fichado()
+                    response = requests.post(self.api, data=data)
+             
+                    if response.status_code == 200:
+                        if response.json()['status'] == 'error':
+                            respuesta = messagebox.askyesno("Confirmar", f"El agente {documento} no esta registrado ¿Desea registrar este agente?")
+                            if respuesta:
+                                self.nombre_agente = simpledialog.askstring("Registrar Agente", "Ingrese el nombre del agente:")
+                                if self.nombre_agente:
+                                    print(f"Registrando agente {self.nombre_agente} con documento {documento}")
+                                    return self.validar_fichado()
+                                else:
+                                    messagebox.showwarning("Advertencia", "Debe ingresar un nombre para registrar al agente.")
+                        else:
+                            self.foto_api = base64.b64decode(response.json()['data'][0]['foto'])
+                            return self.validar_fichado()
                     else:
-                        self.validar_fichado()
+                        messagebox.showerror("Error de sistema", f"Error al intentar conectar con la API, intente mas tarde. Resp:{response.status_code}")
                 except requests.exceptions.RequestException as e:
                     messagebox.showerror("Error de sistema", "Error al intentar conectar con la API, intente mas tarde.")
 
