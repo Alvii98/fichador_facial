@@ -17,7 +17,7 @@ import requests
 # from requests.auth import HTTPBasicAuth
 import re
 import base64
-# PARA EXE: pyinstaller --onefile --windowed --add-data "shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "mmod_human_face_detector.dat;face_recognition_models/models" main.py
+# PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main.py
 # ejecutar para actualizar dependencias  pip install --upgrade setuptools
 class VentanaPrincipal(tk.Tk):
     def __init__(self):

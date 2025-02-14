@@ -4,106 +4,55 @@ from tkinter import messagebox
 from PIL import Image, ImageTk
 import cv2 # opencv-python==4.9.0.80
 import numpy as np # numpy==1.26.3
-import face_recognition as fr # dlib-19.24.99-cp312-cp312-win_amd64.whl luego install face_recognition
-import dlib
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import locale
-import sqlite3
 import threading
-import math
-import pymysql
-from pymysql.err import OperationalError, ProgrammingError
-import io
+import pandas as pd
+import sqlite3
+import re
 
-# PARA EXE: pyinstaller --onefile --windowed --add-data "shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "mmod_human_face_detector.dat;face_recognition_models/models" main.py
+# PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main.py
 # ejecutar para actualizar dependencias  pip install --upgrade setuptools
 class VentanaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Fichador facial 1.3")
-        self.ancho = 780
-        self.alto = 480
+        self.title("Contador de personas 2.0")
+        self.ancho = 880
+        self.alto = 580
         self.anchoVideo = 620
-        self.altoVideo = 380
-        self.anchoFich = 320
-        self.altoFich = 260
+        self.altoVideo = 340
         self.intentosFacial = 0
         self.notificacion = True
-        self.cargar_video = True
-        self.cara = ''
-        self.xV = (self.winfo_screenwidth() // 2) - (self.anchoVideo // 2)
-        self.yV = (self.winfo_screenheight() // 2) - (self.altoVideo // 2) - 100
+        self.cargar_video = 0
+        self.cara = None
         # Coordenadas para centrar app
         self.x = (self.winfo_screenwidth() // 2) - (self.ancho // 2)
-        self.y = (self.winfo_screenheight() // 2) - (self.alto // 2) - 100
+        self.y = (self.winfo_screenheight() // 2) - (self.alto // 2) - 50
         self.geometry(f'{self.ancho}x{self.alto}+{self.x}+{self.y}')
         # Cargar el archivo de imagen desde el disco
         icono = tk.PhotoImage(file="img/ico.png")
         # Establecerlo como ícono de la ventana
         self.iconphoto(True, icono)
-        # PARA CUANDO ES DE PRUEBA
-        id = datetime.now().strftime('%Y')
-        # if id != '2024':
-        #     quit()
-        self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+
+        self.img = ImageTk.PhotoImage(Image.open("img/imagen.png"))
         self.menu = ImageTk.PhotoImage(file="img/menu.png")
-
+        self.count = 0
+        self.fecha_hora = ''
         self.menu_desplegado = False
-        
-        # self.detector = dlib.get_frontal_face_detector()
-        self.predictor = ''
-
-        self.giro_cara = 0
-        self.okk = 0
         self.crear_widgets()
+        # Cargar video mientras inicia el programa
+        threading.Thread(target=self.validar_persona).start()
+        # Cargar el modelo preentrenado (por ejemplo, un modelo YOLO)
+        self.net = None
+        self.outs = None
+        self.classes = None
+        threading.Thread(target=self.cargar_lib).start()
+        self.update_clock()
+        self.conn_bdd()
+        self.insertar_registro('imagen.png')
 
-        # Cargar el modelo YOLO
-        self.net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
-        # layer_names = self.net.getLayerNames()
-        self.output_layers = self.net.getUnconnectedOutLayersNames()
-        # self.output_layers = [layer_names[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
-        
-        # Inicializar contador
-        count = 0
-        line_position = 300  # Posición de la línea en píxeles
-        global cap
-        self.lblDoc.configure(text='Cargando video..')
-        cap = cv2.VideoCapture(0)
-        if cap.isOpened():
-            self.cargar_video = False
-            self.documento.config(state="normal")
-            self.lblDoc.configure(text='Presione Enter para fichar.')
-            print('cargo el video')
-            self.documento.focus_set() 
-        else:
-            print('error al cargar el video')
-            
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            detections = self.detect_people(frame)
-
-            for (box, confidence) in detections:
-                x, y, w, h = box
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                if y < line_position < y + h:
-                    count += 1
-
-            cv2.line(frame, (0, line_position), (frame.shape[1], line_position), (0, 0, 255), 2)
-            cv2.putText(frame, f'Count: {count}', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-
-            cv2.imshow('Frame', frame)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-    # Función para detectar personas
     def detect_people(self,frame):
         height, width = frame.shape[:2]
         blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
@@ -135,7 +84,20 @@ class VentanaPrincipal(tk.Tk):
 
 
     def cargar_lib(self):
-        self.predictor = dlib.shape_predictor('face_recognition/shape_predictor_68_face_landmarks.dat')
+        # Cargar el modelo preentrenado (modelo YOLO)
+        self.net = cv2.dnn.readNet("libs/yolov3.weights", "libs/yolov3.cfg")
+        layer_names = self.net.getLayerNames()
+        self.output_layers = [layer_names[i - 1] for i in self.net.getUnconnectedOutLayers()]
+        self.outs = None
+        # Cargar las clases
+        with open("libs/coco.names", "r") as f:
+            self.classes = [line.strip() for line in f.readlines()]
+
+        # self.predictor = dlib.shape_predictor('face_recognition/shape_predictor_68_face_landmarks.dat')
+
+    def borrar_registros(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
 
     def conn_bdd(self):
         # Conectar a la base de datos (o crearla si no existe)
@@ -146,160 +108,144 @@ class VentanaPrincipal(tk.Tk):
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS registros (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agente TEXT NOT NULL,
-            cruce TEXT NOT NULL,
-            fecha DATETIME NOT NULL
-        )''')
-        conn.commit()
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS agentes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agente TEXT NOT NULL,
             fecha DATETIME NOT NULL,
-            foto BLOB NOT NULL
+            local TEXT NOT NULL,
+            archivo TEXT NOT NULL
         )''')
         conn.commit()
-        conn.close()
 
-    def insertar_registro(self, agente, archivo):
+    def insertar_registro(self,archivo):
         conn = sqlite3.connect('registros.db')
         cursor = conn.cursor()
         
-        cursor.execute("""SELECT * FROM agentes
-        WHERE agente = ?""", (agente,))
-        resp = cursor.fetchall()
         fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        cruce = self.cruce(agente, fecha)
-        if not resp:
-            respuesta = messagebox.askyesno("Confirmar", f"El agente {agente} no esta registrado ¿Desea registrar este agente?")
-            if respuesta:
-                with open(archivo, 'rb') as file:
-                    blob_data = file.read()
-                cursor.execute('''INSERT INTO agentes (agente, fecha, foto)
-                VALUES (?, ?, ?)''', (agente, fecha, blob_data))
-            else:
-                return '',''
 
-        cursor.execute('''INSERT INTO registros (agente, cruce, fecha)
-        VALUES (?, ?, ?)''', (agente, cruce, fecha))
+        cursor.execute('''INSERT INTO registros (fecha, local, archivo)
+        VALUES (?, ?, ?)''', (fecha, self.lugar.get(), archivo))
 
         conn.commit()
         conn.close()
-        return fecha,cruce
-    
-    def dos_minutos(self, agente, fecha):
-        conn = sqlite3.connect('registros.db')
-        cursor = conn.cursor()
 
-        cursor.execute("""SELECT fecha FROM registros
-        WHERE agente = ? ORDER BY fecha DESC LIMIT 1""", (agente,))
-
-        resp = cursor.fetchall()
-        conn.close()
-
-        if not resp:
-            return False
-        else:
-            # Convertir las cadenas de texto a objetos datetime
-            fecha1 = datetime.strptime(resp[0][0], "%Y-%m-%d %H:%M:%S")
-            fecha2 = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
-            # Calcular la diferencia entre las dos fechas
-            diferencia = fecha2 - fecha1
-            # Verificar si la diferencia es de 2 minutos o menos
-            if diferencia <= timedelta(minutes=1):
-                return True
-            else:
-                return False
-    
-    def cruce(self, agente, fecha):
-        conn = sqlite3.connect('registros.db')
-        cursor = conn.cursor()
-
-        cursor.execute("""SELECT agente, cruce, fecha FROM registros
-        WHERE fecha >= datetime(?, '-15 hours') AND agente = ? ORDER BY fecha DESC""", (fecha,agente))
-        
-        registro = cursor.fetchall()
-        conn.close()
-
-        if not registro:
-            cruce = 'ENTRADA'
-        elif registro[0][1] == 'ENTRADA':
-            cruce = 'SALIDA'
-        else:
-            cruce = 'ENTRADA'
-        
-        return cruce
-    
     def registros(self):
         conn = sqlite3.connect('registros.db')
         cursor = conn.cursor()
+        try:
+            inicio = datetime.strptime(self.fecha.get(), '%d/%m/%Y')
+            final = datetime.strptime(self.fecha2.get(), '%d/%m/%Y')
+            inicio = f'{inicio.strftime('%Y-%m-%d')} 00:00:10'
+            final = f'{final.strftime('%Y-%m-%d')} 23:59:59'
+        except ValueError:
+            conn.close()    
+            return self.notificaciones('Una de las fechas tiene un formato incorrecto.','#df2626')
 
-        cursor.execute("""WITH registros_ordenados AS (SELECT agente, fecha,
-                LAG(fecha) OVER (PARTITION BY agente ORDER BY fecha) AS fecha_anterior, cruce
-            FROM registros WHERE fecha >= DATE('now', '-2 months')),
-        horas_trabajadas AS (SELECT agente, 
-                SUM(CASE WHEN cruce = 'SALIDA' THEN (julianday(fecha) - julianday(fecha_anterior)) * 24 * 60 
-                    ELSE 0 END) AS minutos_trabajados
-            FROM registros_ordenados WHERE cruce = 'SALIDA' GROUP BY agente)
-        SELECT agente, strftime('%d/%m/%Y %H:%M:%S', fecha) AS fecha, cruce,
-            printf('%02d:%02d', minutos_trabajados / 60, minutos_trabajados % 60) AS horas_trabajadas
-        FROM registros_ordenados LEFT JOIN horas_trabajadas USING (agente) ORDER BY fecha DESC""")
+        cursor.execute("""SELECT strftime('%d/%m/%Y %H:%M', fecha) AS fecha,local,archivo from registros 
+                       WHERE fecha >= ? and fecha <= ? ORDER BY fecha DESC""", (inicio,final))
         
         registros = cursor.fetchall()
         conn.close()
+
+        if len(registros) == 0:
+            return self.notificaciones('No encontramos registros entre esas fechas.', '#ff0000')
+        
+        self.lblValidFecha.configure(text=f'Encontramos {len(registros)} registros entre esas fechas.')
+        
+
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+
         for registro in registros:
             self.tree.insert("", tk.END, values=registro)
-
-        return registros
-    
-    def agentes(self):
-        conn = sqlite3.connect('registros.db')
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT id,agente,strftime('%d/%m/%Y %H:%M:%S', fecha) AS fecha,foto FROM agentes order by fecha")
         
-        registros = cursor.fetchall()
-        conn.close()
-        for widget in self.frameAgentes.winfo_children():
-            widget.destroy()
-        frame_tarjeta = tk.Canvas(self.frameAgentes, height=100)
-        frame_tarjeta.pack(padx=5, pady=5, side='top')
-        pos = 0
-        for registro in registros:
-            pos = pos + 1
-            if pos == 6:
-                frame_tarjeta = ttk.Frame(self.frameAgentes)
-                frame_tarjeta.pack(padx=5, pady=5, side='top')
-                pos = 0
-            
-            tarjeta = ttk.Frame(frame_tarjeta, borderwidth=2, relief="groove")
-            tarjeta.pack(padx=5, pady=5, side='left')
-
-            if registro[3]:
-                foto_agente = Image.open(io.BytesIO(registro[3]))
-                foto_agente = foto_agente.resize((80,60), Image.Resampling.LANCZOS)
-                foto_agente = ImageTk.PhotoImage(foto_agente)
-                etiqueta_imagen = ttk.Label(tarjeta, image=foto_agente)
-                etiqueta_imagen.image = foto_agente  
-                etiqueta_imagen.pack(padx=5, pady=5)
-            etiqueta_dni = ttk.Label(tarjeta, text=registro[1])
-            etiqueta_dni.pack(padx=5, pady=5)
-            boton_eliminar = ttk.Button(tarjeta, text="Eliminar", cursor="hand2", command=lambda id=registro[0]: self.eliminar_agente(id))
-            boton_eliminar.pack(padx=5, pady=5)
-
         return registros
     
-    def eliminar_agente(self,id):
-        conn = sqlite3.connect('registros.db')
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM agentes WHERE id = ?", (id,))
-        conn.commit()
-        conn.close()
-        self.agentes()
-        print(f"Agente {id} eliminado")
+    def exportar_excel(self):
+        rows = []
+        try:
+            for row_id in self.tree.get_children():
+                row = self.tree.item(row_id)['values']
+                rows.append(row)
+            if not rows:
+                self.notificaciones('No hay datos para exportar.', '#ff0000')
+            else:
+                df = pd.DataFrame(rows, columns=("Agente", "Fecha", "Cruce"))
+                fecha = datetime.now().strftime('%Y%m%d%H%M')
+                archivo = f"registros_{fecha}.xlsx"
+                df.to_excel(archivo, index=False)
+                os.startfile(archivo)
+                self.notificaciones(f'Exportado correctamente {archivo}','#35c82b')
+        except Exception as e:
+            self.notificaciones('Ocurrio un error al exportar.', '#ff0000')
+    
+    def validar_fecha(self, event=None, *args):
+        entrada = self.fecha_var.get()
+        if event.keysym != 'BackSpace' and event.keysym != 'Left' and event.keysym != 'right':
+            self.lblValidFecha.configure(text='El formato de fecha requerido DD/MM/AAAA.')
+            formateada = re.sub(r'[^0-9]', '', entrada)
+            # Formatear la entrada a DD/MM/YYYY
+            if len(formateada) >= 2:
+                if int(formateada[:2]) > 31:
+                    formateada = '31/' + formateada[2:]
+                else:
+                    formateada = formateada[:2] + '/' + formateada[2:]
+            if len(formateada) >= 5:
+                if int(formateada[3:5]) > 12:
+                    formateada = formateada[:3]+'12/'+formateada[5:]
+                else:
+                    formateada = formateada[:5] + '/' + formateada[5:]
+            if len(formateada) >= 10:
+                if int(formateada[6:10]) > int(datetime.now().year):
+                    formateada = formateada[:6] + str(datetime.now().year)
+                else:
+                    formateada = formateada[:10]
+        
+                try:
+                    datetime.strptime(formateada, '%d/%m/%Y')
+                    self.lblValidFecha.configure(text='Formato de fecha correcto.')
+                except ValueError:
+                    self.lblValidFecha.configure(text='El formato de fecha requerido DD/MM/AAAA.')
+                    print("Fecha y hora invalida")
+
+            self.fecha_var.set(formateada)
+            self.fecha.icursor(self.fecha.index(tk.INSERT) + 1)
+            # self.fechaYHora.after(10, lambda: )
+        else:
+            self.fecha_var.set(entrada)
+    
+    def validar_fecha2(self, event=None, *args):
+        entrada = self.fecha_var2.get()
+        if event.keysym != 'BackSpace' and event.keysym != 'Left' and event.keysym != 'right':
+            self.lblValidFecha.configure(text='El formato de fecha requerido DD/MM/AAAA.')
+            formateada = re.sub(r'[^0-9]', '', entrada)
+            # Formatear la entrada a DD/MM/YYYY
+            if len(formateada) >= 2:
+                if int(formateada[:2]) > 31:
+                    formateada = '31/' + formateada[2:]
+                else:
+                    formateada = formateada[:2] + '/' + formateada[2:]
+            if len(formateada) >= 5:
+                if int(formateada[3:5]) > 12:
+                    formateada = formateada[:3]+'12/'+formateada[5:]
+                else:
+                    formateada = formateada[:5] + '/' + formateada[5:]
+            if len(formateada) >= 10:
+                if int(formateada[6:10]) > int(datetime.now().year):
+                    formateada = formateada[:6] + str(datetime.now().year)
+                else:
+                    formateada = formateada[:10]
+        
+                try:
+                    datetime.strptime(formateada, '%d/%m/%Y')
+                    self.lblValidFecha.configure(text='Formato de fecha correcto.')
+                except ValueError:
+                    self.lblValidFecha.configure(text='El formato de fecha requerido DD/MM/AAAA.')
+                    print("Fecha y hora invalida")
+
+            self.fecha_var2.set(formateada)
+            self.fecha2.icursor(self.fecha2.index(tk.INSERT) + 1)
+            # self.fechaYHora.after(10, lambda: )
+        else:
+            self.fecha_var2.set(entrada)
 
     def crear_widgets(self):
         locale.setlocale(locale.LC_TIME, 'es_ES')
@@ -314,9 +260,6 @@ class VentanaPrincipal(tk.Tk):
         self.botInicio = tk.Button(self.menuLateral, text="Inicio", font=("Helvetica", 14), bg="#2a3138", fg="gray", width=15, cursor="hand2", command=self.clickInicio)
         self.botInicio.pack(side=tk.TOP)
 
-        self.botAgentes = tk.Button(self.menuLateral, text="Agentes", font=("Helvetica", 14), bg="#2a3138", fg="white", width=15, cursor="hand2", command=self.clickAgentes)
-        self.botAgentes.pack(side=tk.TOP)
-        
         self.botRegistros = tk.Button(self.menuLateral, text="Registros", font=("Helvetica", 14), bg="#2a3138", fg="white", width=15, cursor="hand2", command=self.clickRegistros)
         self.botRegistros.pack(side=tk.TOP)
 
@@ -326,6 +269,16 @@ class VentanaPrincipal(tk.Tk):
         boton = tk.Button(self.barraSuperior, image=self.menu, cursor="hand2", width=32, height=32, command=self.expandir_menu)
         boton.pack(side=tk.LEFT, padx=10)
 
+        self.frameLugar = tk.Frame(self.barraSuperior, bg="#1f2329")
+        self.frameLugar.pack(side=tk.LEFT)
+        
+        self.lblLugar = tk.Label(self.frameLugar, text="Nombre del local:", bg="#1f2329", fg="white", font=("Helvetica", 10))
+        self.lblLugar.grid(sticky="W")
+        
+        self.lugar = tk.Entry(self.frameLugar, width=30, text="Local 1", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lugar.grid(sticky="W")
+        self.lugar.insert(0, "Local 1")
+
         self.frameFecha = tk.Frame(self.barraSuperior, bg="#1f2329")
         self.frameFecha.pack(side=tk.RIGHT)
 
@@ -334,18 +287,55 @@ class VentanaPrincipal(tk.Tk):
 
         self.lblFecha = tk.Label(self.frameFecha, text='', bg="#1f2329", fg="white", font=("Helvetica", 15))
         self.lblFecha.grid()
-
+        
         self.frameRegistros = tk.Frame(self.cuerpoPrincipal, bg="#fff8e6")
         self.frameRegistros.pack(fill=tk.BOTH, expand=True)
-        self.tree = ttk.Treeview(self.frameRegistros, columns=("Agente", "Fecha", "Cruce", "Horas"), height=self.alto, show='headings')
-        self.tree.heading("Agente", text="Agente")
+        
+        self.frameFechasRegistros = tk.Frame(self.frameRegistros, bg="#fff8e6")
+        self.frameFechasRegistros.pack(side=tk.TOP, pady=5)
+        
+        self.frameFechaRegistros = tk.Frame(self.frameFechasRegistros, bg="#fff8e6")
+        self.frameFechaRegistros.grid(row=0, column=0, sticky="W", padx=5)
+        
+        self.lblFecha1 = tk.Label(self.frameFechaRegistros, text="Fecha inicio:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lblFecha1.grid(sticky="W")
+        
+        self.fecha_var = tk.StringVar()
+        self.fecha = tk.Entry(self.frameFechaRegistros, width=30, bg="#fff8e6", fg="black", font=("Helvetica", 10), textvariable=self.fecha_var)
+        self.fecha.grid(sticky="W")
+        self.fecha.bind('<KeyRelease>', self.validar_fecha)
+
+        self.frameFechaRegistros2 = tk.Frame(self.frameFechasRegistros, bg="#fff8e6")
+        self.frameFechaRegistros2.grid(row=0, column=1, sticky="W", padx=5)
+
+        self.lblFecha2 = tk.Label(self.frameFechaRegistros2, text="Fecha final:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lblFecha2.grid(sticky="W")
+        
+        self.fecha_var2 = tk.StringVar()
+        self.fecha2 = tk.Entry(self.frameFechaRegistros2, width=30, bg="#fff8e6", fg="black", font=("Helvetica", 10), textvariable=self.fecha_var2)
+        self.fecha2.grid(sticky="W")
+        self.fecha2.bind('<KeyRelease>', self.validar_fecha2)
+
+        self.lblValidFecha = tk.Label(self.frameRegistros, text="El formato de fecha requerido DD/MM/AAAA.", bg="#fff8e6", fg="#707070", font=("Helvetica", 7))
+        self.lblValidFecha.pack(side=tk.TOP, pady=5)
+
+        self.frameBotRegistros = tk.Frame(self.frameRegistros, bg="#fff8e6")
+        self.frameBotRegistros.pack(side=tk.TOP, pady=5)
+
+        boton = tk.Button(self.frameBotRegistros, text="Exportar a Excel", cursor="hand2", bg="green", fg="#fff8e6", command=self.exportar_excel)
+        boton.grid(row=0, column=0, sticky="W", padx=5)
+
+        boton = tk.Button(self.frameBotRegistros, text="Buscar", cursor="hand2", bg="blue", fg="#fff8e6", command=self.registros)
+        boton.grid(row=0, column=1, sticky="W", padx=5)
+
+        boton2 = tk.Button(self.frameBotRegistros, text="Eliminar registros", cursor="hand2", bg="red", fg="#fff8e6", command=self.borrar_registros)
+        boton2.grid(row=0, column=2, sticky="W", padx=5)
+
+        self.tree = ttk.Treeview(self.frameRegistros, columns=("Fecha", "Lugar", "Archivo"), height=self.alto, show='headings')
         self.tree.heading("Fecha", text="Fecha")
-        self.tree.heading("Cruce", text="Cruce")
-        self.tree.heading("Horas", text="Horas")
-        self.tree.column("Agente", anchor="center")
-        self.tree.column("Fecha", anchor="center")
-        self.tree.column("Cruce", anchor="center", width=50)
-        self.tree.column("Horas", anchor="center", width=10)
+        self.tree.heading("Lugar", text="Lugar")
+        self.tree.heading("Archivo", text="Archivo")
+
         # Crear la Scrollbar vertical
         vsb = ttk.Scrollbar(self.frameRegistros, orient="vertical", command=self.tree.yview)
         vsb.pack(side='right', fill='y')
@@ -353,59 +343,62 @@ class VentanaPrincipal(tk.Tk):
         self.tree.pack(side='left', fill=tk.BOTH, expand=True)
         self.frameRegistros.pack_forget()
         
-        self.frameAgentes = tk.Frame(self.cuerpoPrincipal, bg="#fff8e6")
-        self.frameAgentes.pack(fill=tk.BOTH)
-
-        self.frameAgentes.pack_forget()
-
         self.frameDatos = tk.Frame(self.cuerpoPrincipal, bg="#fff8e6")
-        self.frameDatos.pack(side=tk.TOP, pady=10)
+        self.frameDatos.pack(fill=tk.BOTH, pady=10)
         
-        self.lblDoc = tk.Label(self.frameDatos, text="Documento:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
-        self.lblDoc.grid(sticky="W")
         
+        self.lblLinea = tk.Label(self.frameDatos, text="Linea de detección:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lblLinea.pack(expand=True, anchor="center")
+
+                # Crear un estilo personalizado
+        style = ttk.Style()
+        style.theme_use('default')
+        # Configurar el estilo del Combobox
+        style.configure("TCombobox",
+                        fieldbackground="#fff8e6",  # Color de fondo del campo
+                        background="#fff8e6",       # Color de fondo del desplegable
+                        foreground="black",         # Color de la letra
+                        selectbackground="#fff8e6", # Color de fondo de la selección
+                        selectforeground="black")
+
         vcmd = (self.register(self.validate_input), '%P')
-        self.documento = tk.Entry(self.frameDatos, width=30, bg="#fff8e6", fg="black", font=("Helvetica", 10), state="disabled", validate='key', validatecommand=vcmd)
-        self.documento.grid(sticky="W")
-        self.documento.bind('<Return>', self.enter)
+        self.linea = ttk.Combobox(self.frameDatos, width=33, style="TCombobox", validate='key', validatecommand=vcmd)
+        self.linea['values'] = ('10','50','100','150','200','250','300','350','400')
+        self.linea.current(4) 
+        self.linea.pack(expand=True, anchor="center", pady=10)
+        # vcmd = (self.register(self.validate_input), '%P')
+        # self.linea = tk.Entry(self.frameDatos, width=30, bg="#fff8e6", fg="black", font=("Helvetica", 10), validate='key', validatecommand=vcmd)
+        # self.linea.pack(expand=True, anchor="center", pady=10)
+        # self.linea.insert(0, 300)
 
-        self.lblDoc = tk.Label(self.frameDatos, text="Presione Enter para fichar.", bg="#fff8e6", fg="#707070", font=("Helvetica", 10))
-        self.lblDoc.grid(sticky="W")
+        self.frameBotDatos = tk.Frame(self.frameDatos, bg="#fff8e6")
+        self.frameBotDatos.pack(expand=True, anchor="center")
+
+        self.botonVideo = tk.Button(self.frameBotDatos, text="Iniciar camara", cursor="hand2", bg="blue", fg="#fff8e6", command=self.validar_persona)
+        self.botonVideo.grid(row=0, column=1, sticky="W", padx=10)
         
-        self.foto = tk.Label(self.frameDatos, image=self.img, width=self.anchoFich, height=self.altoFich, borderwidth=2, relief="groove")
-        self.foto.grid(sticky="W")
+        self.botonCerrarVideo = tk.Button(self.frameBotDatos, text="Cerrar camara", cursor="hand2", bg="red", fg="#fff8e6", command=self.cerrar_video)
+        self.botonCerrarVideo.grid(row=0, column=2, sticky="W", padx=10)
 
-        self.lblFich = tk.Label(self.frameDatos, text="", bg="#fff8e6", fg="#ffffff", font=("Helvetica", 15))
-        self.lblFich.grid(pady=5)
-    
+        self.foto = tk.Label(self.frameDatos, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
+        self.foto.pack(expand=True, anchor="center", pady=10)
+
     def validate_input(self,value):
         # Verificar si el nuevo valor es un número y tiene una longitud máxima de 9 caracteres
         return (value.isdigit() and len(value) <= 9) or (len(value) == 0)
     
     def clickInicio(self):
         self.botInicio.config(fg="gray")
-        self.botAgentes.config(fg="white")
         self.botRegistros.config(fg="white")
         self.frameDatos.pack(side=tk.TOP, pady=10)
         self.frameRegistros.pack_forget()
-        self.frameAgentes.pack_forget()
 
     def clickRegistros(self):
         self.botInicio.config(fg="white")
-        self.botAgentes.config(fg="white")
         self.botRegistros.config(fg="gray")
         self.frameRegistros.pack(fill=tk.BOTH)
         self.frameDatos.pack_forget()
-        self.frameAgentes.pack_forget()
     
-    def clickAgentes(self):
-        self.botInicio.config(fg="white")
-        self.botAgentes.config(fg="gray")
-        self.botRegistros.config(fg="white")
-        self.frameAgentes.pack(fill=tk.BOTH, expand=True)
-        self.frameDatos.pack_forget()
-        self.frameRegistros.pack_forget()
-
     def expandir_menu(self):
         if self.menu_desplegado:
             self.menuLateral.pack_forget()
@@ -420,42 +413,6 @@ class VentanaPrincipal(tk.Tk):
         fecha_actual = datetime.now().strftime("%A, %d de %B de %Y")
         self.lblFecha.configure(text=fecha_actual)
         self.after(1000, self.update_clock)
-
-    def mensajes(self,txt,color):
-        if txt == '':
-            self.lblFich.config(text=txt, bg="#fff8e6")
-        else:
-            self.lblFich.config(text=txt, bg=color)
-
-    def foto_agente(self,documento):
-        conn = sqlite3.connect('registros.db')
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute("""SELECT foto FROM agentes
-            WHERE agente = ?""", (documento,))
-            resp = cursor.fetchone()
-            conn.close()
-            if resp is not None:
-                time.sleep(1)
-                imagen_bytes = np.frombuffer(resp[0], dtype=np.uint8)
-                imagen = cv2.imdecode(imagen_bytes, cv2.IMREAD_COLOR)
-                if imagen is None:
-                    return None
-            else:
-                return None
-
-            return imagen
-        except Exception as e:
-            print('Error',e)
-            return None
-        
-    def texto_informativo(self,frame,texto):
-        cv2.putText(frame, texto, (3, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
-        # cv2.namedWindow('Reconocimiento facial', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
-        cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
-        cv2.imshow('Reconocimiento facial', frame)
 
     def eliminarNotificacion(self):
         time.sleep(3)
@@ -481,168 +438,97 @@ class VentanaPrincipal(tk.Tk):
         self.lblNot.pack(side="top", pady=10)
         threading.Thread(target=self.eliminarNotificacion).start()
 
-    def prueba_vida(self,frame,rect):
-        shape = self.predictor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), rect)
-        # distancia entre nariz y oreja izquierda
-        distancia = math.sqrt((shape.part(33).x - shape.part(16).x) ** 2 + (shape.part(33).y - shape.part(16).y) ** 2)
-        if self.giro_cara == 0: 
-            self.giro_cara = distancia
-        else:
-            self.texto_informativo(frame,'Gire la cara hacia la izquierda por favor..')
-        if distancia < (self.giro_cara - 20): # giro cara a la izquierda
-            self.okk = 2
-    
     def limpiar_foto(self):
-        self.registros()
-        self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+        self.img = ImageTk.PhotoImage(Image.open("img/imagen.png"))
         self.foto.config(image=self.img)
 
-    def validar_fichado(self): 
-        if self.cargar_video:
+    def cerrar_video(self):
+        if self.cargar_video != 0 and self.cargar_video != 1:
+            self.cargar_video = 10
+
+    def validar_persona(self): 
+        if self.cargar_video == 1:
+            self.notificaciones('Se esta cargando el video, espere por favor.','#df2626')
+            return False
+
+        if self.cargar_video == 0:
             global cap
-            self.lblDoc.configure(text='Cargando video..')
+            print('Cargando el video')
+            self.botonVideo.configure(state="disabled")
+            self.cargar_video = 1
             cap = cv2.VideoCapture(0)
             if cap.isOpened():
-                self.cargar_video = False
-                self.documento.config(state="normal")
-                self.lblDoc.configure(text='Presione Enter para fichar.')
+                self.botonVideo.configure(state="normal")
+                self.cargar_video = 2
                 print('cargo el video')
-                self.documento.focus_set() 
             else:
+                self.botonVideo.configure(state="normal")
+                self.cargar_video = 0
                 self.notificaciones('Ocurrio un error al cargar el video, revise la camara por favor.','#df2626')
         else:
-            documento = self.documento.get()   
             ret, frame = cap.read()
             if ret:
-                cv2.namedWindow('Reconocimiento facial', cv2.WINDOW_NORMAL)
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:
+                    self.botonVideo.configure(state="normal")
                     cv2.destroyAllWindows()
-                    self.intentosFacial = 0
-                    # self.documento.delete(0, tk.END)
-                    self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+                    self.img = ImageTk.PhotoImage(Image.open("img/imagen.png"))
                     self.foto.config(image=self.img)
                     return False
-                face_locations = fr.face_locations(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-                for i,(top, right, bottom, left) in enumerate(face_locations):
-                    if (bottom - top) > 170 and (bottom - top) < 190:
-                        if (self.okk == 0):
-                            self.okk = 1
-                            self.cara = frame
-                        else:
-                            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                            threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
-                        break
-                    if ((bottom - top) < 120):
-                        self.texto_informativo(frame,'Acerque la cara hacia la camara.')
-                        self.okk = 0
-                        self.giro_cara = 0
-                    if ((bottom - top) > 250):
-                        self.okk = 0
-                        self.giro_cara = 0
-                        self.texto_informativo(frame,'Aleje la cara de la camara.') 
-                    if self.okk == 1:
-                        threading.Thread(target=self.prueba_vida(frame,dlib.rectangle(left, top, right, bottom))).start()
-                        break
-                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                    if ((bottom - top) < 170) and ((bottom - top) > 150):
-                        self.texto_informativo(frame,'Acerque la cara hacia la camara.')
-                    elif ((bottom - top) < 150) and ((bottom - top) > 120):
-                        self.texto_informativo(frame,'Acerque la cara hacia la camara.')
-                    elif ((bottom - top) > 190) and ((bottom - top) < 220):
-                        self.texto_informativo(frame,'Aleje la cara de la camara.')
-                    elif ((bottom - top) > 220) and ((bottom - top) < 250):
-                        self.texto_informativo(frame,'Aleje la cara de la camara.')                                              
-                else:
-                    self.okk = 0
-                    self.giro_cara = 0
-                    cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
-                    cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
-                    cv2.imshow('Reconocimiento facial', frame)
-                # key = cv2.waitKey(1) & 0xFF #agregar al if key == 27 or para salir del video con Esc
+                try:
+                    self.botonVideo.configure(state="disabled")
+                    
+                    detections = self.detect_people(frame)
+                    
+                    if self.linea.get() == 0 or self.linea.get() == '': linea_deteccion = '200'
+                    else: linea_deteccion = self.linea.get()
+                    if self.fecha_hora == '': self.fecha_hora = datetime.now().strftime('%d/%m/%Y %H:%M')
 
-                if (self.intentosFacial > 3):
-                    self.intentosFacial = 0
-                    self.documento.delete(0, tk.END)
-                    self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-                    self.foto.config(image=self.img)
-                    self.notificaciones('No encontramos coincidencias con su rostro.','#df2626')
-                    cv2.destroyAllWindows()
-                elif self.okk == 2:
-                    self.okk = 0
-                    self.giro_cara = 0
-                    foto = self.foto_agente(documento)
-
-                    if foto is None: 
-                        print('Comparando con la misma foto que el video.')
-                        foto = self.cara
-
-                    face_encodings = fr.face_encodings(self.cara, face_locations)
-                    # Encontrar los rostros en la imagen
-                    face_locations2 = fr.face_locations(foto)
-                    face_encodings2 = fr.face_encodings(foto, face_locations2)
-                    # for face_encoding in face_encodings:
-                    if len(face_encodings) > 0 and len(face_encodings2) > 0:
-                        matches = fr.compare_faces([face_encodings2[0]], face_encodings[0])
-                        # Si se encuentra una coincidencia 
-                        if True in matches:
-                            cv2.destroyAllWindows()
-                            self.intentosFacial = 0
-                            imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
-                            imagen_pil = imagen_pil.resize((self.anchoFich, self.altoFich), Image.Resampling.LANCZOS)
-                            self.img = ImageTk.PhotoImage(imagen_pil)
-                            self.foto.config(image=self.img)
-                            # Formatear la fecha y hora como un ID único
+                    for (box, confidence) in detections:
+                        x, y, w, h = box
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        if y < int(linea_deteccion) < y + h:
                             id = datetime.now().strftime('%Y%m%d%H%M')
-                            path = f'img/log/{id}_{documento}.png'
+                            path = f'img/log/{id}_foto.png'
                             if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
-                            cv2.imwrite(path, cv2.resize(self.cara, (self.anchoFich, self.altoFich)))
-                            self.documento.delete(0, tk.END) 
-                            fecha, cruce = self.insertar_registro(documento, path)
-                            if fecha != '' and cruce != '':
-                                self.agentes()
-                                # self.mensajes("Fichado correctamente.","#35c82b")
-                                print(f"Rostro detectado: {documento}")
-                                self.notificaciones(f'Fichado correctamente, {cruce} {fecha}','#35c82b')
-                                self.registros()
-                            self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-                            self.foto.config(image=self.img)
-                            # threading.Thread(target=self.limpiar_foto).start()
-                        else:
-                            self.intentosFacial = self.intentosFacial + 1
-                            texto = "Rostro detectado: Desconocido"
-                            self.texto_informativo(frame,texto)
-                            print(f"Rostro detectado: Desconocido intentos: {self.intentosFacial}")
-                            self.after(2, self.validar_fichado)
-                else:
-                    self.after(10, self.validar_fichado)
+                            cv2.imwrite(path, cv2.resize(frame, (self.anchoVideo, self.altoVideo)))
+                            self.insertar_registro(path)
+                            time.sleep(5)
+                            self.count += 1
+                            
+
+                    cv2.line(frame, (0, int(linea_deteccion)), (frame.shape[1], int(linea_deteccion)), (0, 0, 255), 2)
+                    cv2.putText(frame, f'Cantidad desde {self.fecha_hora}: {self.count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame = cv2.resize(frame, (self.anchoVideo, self.altoVideo))
+                    self.img = ImageTk.PhotoImage(Image.fromarray(frame))
+                    self.foto.config(image=self.img)
+                    if self.cargar_video == 10:
+                        self.cargar_video = 2
+                        cv2.destroyAllWindows()
+                        self.botonVideo.configure(state="normal")
+                        self.img = ImageTk.PhotoImage(Image.open("img/imagen.png"))
+                        self.foto.config(image=self.img)
+                    else:
+                        return self.after(10, self.validar_persona)
+                except Exception as e:
+                    self.botonVideo.configure(state="normal")
+                    cv2.destroyAllWindows()
+                    self.img = ImageTk.PhotoImage(Image.open("img/imagen.png"))
+                    self.foto.config(image=self.img)
+                    print(f"Ocurrió un error: {e}")
             else:
+                self.cargar_video = 1
+                self.botonVideo.configure(state="disabled")
                 cap = cv2.VideoCapture(0)
                 if cap.isOpened():
-                    self.cargar_video = False
-                    self.documento.config(state="normal")
-                    self.lblDoc.configure(text='Presione Enter para fichar.')
+                    self.botonVideo.configure(state="normal")
+                    self.cargar_video = 2
                     print('cargo el video')
-                    self.documento.focus_set() 
                 else:
+                    self.botonVideo.configure(state="normal")
+                    self.cargar_video = 0
                     self.notificaciones('Ocurrio un error al cargar el video, revise la camara por favor.','#df2626')
-
-    def enter(self, event=None):
-        documento = self.documento.get()   
-        fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.intentosFacial = 0
-        if documento.strip() == '':
-            self.documento.delete(0, tk.END)
-            self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-            self.foto.config(image=self.img)
-            self.notificaciones('Ingrese el numero de documento.','#df2626')
-        elif self.dos_minutos(documento, fecha):
-            self.documento.delete(0, tk.END)
-            self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-            self.foto.config(image=self.img)
-            self.notificaciones('Usted acaba de fichar, intente dentro de dos minutos.','#df2626')
-        else:
-            self.validar_fichado()
 
     def __del__(self):
         if cap:
