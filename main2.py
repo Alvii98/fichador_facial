@@ -13,7 +13,7 @@ import pandas as pd
 import sqlite3
 import re
 
-# PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main.py
+# PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main2.py
 # ejecutar para actualizar dependencias  pip install --upgrade setuptools
 class VentanaPrincipal(tk.Tk):
     def __init__(self):
@@ -51,7 +51,6 @@ class VentanaPrincipal(tk.Tk):
         threading.Thread(target=self.cargar_lib).start()
         self.update_clock()
         self.conn_bdd()
-        self.insertar_registro('imagen.png')
 
     def detect_people(self,frame):
         height, width = frame.shape[:2]
@@ -158,7 +157,16 @@ class VentanaPrincipal(tk.Tk):
             self.tree.insert("", tk.END, values=registro)
         
         return registros
-    
+
+    def open_image(self, event):
+        item = self.tree.selection()[0]
+        archivo_path = self.tree.item(item, "values")[2]
+        try:
+            img = Image.open(archivo_path)
+            img.show()
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo abrir la imagen: {e}")
+
     def exportar_excel(self):
         rows = []
         try:
@@ -331,16 +339,18 @@ class VentanaPrincipal(tk.Tk):
         boton2 = tk.Button(self.frameBotRegistros, text="Eliminar registros", cursor="hand2", bg="red", fg="#fff8e6", command=self.borrar_registros)
         boton2.grid(row=0, column=2, sticky="W", padx=5)
 
-        self.tree = ttk.Treeview(self.frameRegistros, columns=("Fecha", "Lugar", "Archivo"), height=self.alto, show='headings')
+        self.tree = ttk.Treeview(self.frameRegistros, columns=("Fecha", "Lugar", "Imagen"), height=self.alto, show='headings')
         self.tree.heading("Fecha", text="Fecha")
         self.tree.heading("Lugar", text="Lugar")
-        self.tree.heading("Archivo", text="Archivo")
+        self.tree.heading("Imagen", text="Imagen")
 
         # Crear la Scrollbar vertical
         vsb = ttk.Scrollbar(self.frameRegistros, orient="vertical", command=self.tree.yview)
         vsb.pack(side='right', fill='y')
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side='left', fill=tk.BOTH, expand=True)
+        self.tree.bind("<Double-1>", self.open_image)
+
         self.frameRegistros.pack_forget()
         
         self.frameDatos = tk.Frame(self.cuerpoPrincipal, bg="#fff8e6")
