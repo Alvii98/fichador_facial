@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk # pillow
 import cv2 # opencv-python==4.9.0.80
 import numpy as np # numpy==1.26.3
 import os
@@ -9,16 +9,16 @@ import time
 from datetime import datetime
 import locale
 import threading
-import pandas as pd
+import pandas as pd # pandas y openpyxl
 import sqlite3
 import re
 
-# PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main2.py
+# PARA EXE: pyinstaller --onefile --windowed main2.py
 # ejecutar para actualizar dependencias  pip install --upgrade setuptools
 class VentanaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Contador de personas 2.0")
+        self.title("Contador de personas 2.1")
         self.ancho = 880
         self.alto = 580
         self.anchoVideo = 620
@@ -48,6 +48,7 @@ class VentanaPrincipal(tk.Tk):
         self.net = None
         self.outs = None
         self.classes = None
+        self.insert = 0
         threading.Thread(target=self.cargar_lib).start()
         self.update_clock()
         self.conn_bdd()
@@ -183,7 +184,7 @@ class VentanaPrincipal(tk.Tk):
                 os.startfile(archivo)
                 self.notificaciones(f'Exportado correctamente {archivo}','#35c82b')
         except Exception as e:
-            self.notificaciones('Ocurrio un error al exportar.', '#ff0000')
+            self.notificaciones(f'Ocurrio un error al exportar: {e}', '#ff0000')
     
     def validar_fecha(self, event=None, *args):
         entrada = self.fecha_var.get()
@@ -376,10 +377,6 @@ class VentanaPrincipal(tk.Tk):
         self.linea['values'] = ('10','50','100','150','200','250','300','350','400')
         self.linea.current(4) 
         self.linea.pack(expand=True, anchor="center", pady=10)
-        # vcmd = (self.register(self.validate_input), '%P')
-        # self.linea = tk.Entry(self.frameDatos, width=30, bg="#fff8e6", fg="black", font=("Helvetica", 10), validate='key', validatecommand=vcmd)
-        # self.linea.pack(expand=True, anchor="center", pady=10)
-        # self.linea.insert(0, 300)
 
         self.frameBotDatos = tk.Frame(self.frameDatos, bg="#fff8e6")
         self.frameBotDatos.pack(expand=True, anchor="center")
@@ -478,36 +475,31 @@ class VentanaPrincipal(tk.Tk):
         else:
             ret, frame = cap.read()
             if ret:
-                key = cv2.waitKey(1) & 0xFF
-                if key == 27:
-                    self.botonVideo.configure(state="normal")
-                    cv2.destroyAllWindows()
-                    self.img = ImageTk.PhotoImage(Image.open("img/imagen.png"))
-                    self.foto.config(image=self.img)
-                    return False
                 try:
                     self.botonVideo.configure(state="disabled")
-                    
-                    detections = self.detect_people(frame)
                     
                     if self.linea.get() == 0 or self.linea.get() == '': linea_deteccion = '200'
                     else: linea_deteccion = self.linea.get()
                     if self.fecha_hora == '': self.fecha_hora = datetime.now().strftime('%d/%m/%Y %H:%M')
+                    if self.insert == 0 or self.insert > 15: 
+                        self.insert = 0
+                        detections = self.detect_people(frame)
+                        for (box, confidence) in detections:
+                            x, y, w, h = box
+                            # cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                            if y < int(linea_deteccion) < y + h:
+                                id = datetime.now().strftime('%Y%m%d%H%M')
+                                path = f'img/log/{id}_foto.png'
+                                if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
+                                cv2.imwrite(path, cv2.resize(frame, (self.anchoVideo, self.altoVideo)))
+                                self.insertar_registro(path)
+                                self.insert = 1
+                                self.count += 1
+                        cv2.line(frame, (0, int(linea_deteccion)), (frame.shape[1], int(linea_deteccion)), (0, 0, 255), 2)
+                    else:    
+                        self.insert += 1
+                        cv2.line(frame, (0, int(linea_deteccion)), (frame.shape[1], int(linea_deteccion)), (0, 255, 0), 2)
 
-                    for (box, confidence) in detections:
-                        x, y, w, h = box
-                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                        if y < int(linea_deteccion) < y + h:
-                            id = datetime.now().strftime('%Y%m%d%H%M')
-                            path = f'img/log/{id}_foto.png'
-                            if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
-                            cv2.imwrite(path, cv2.resize(frame, (self.anchoVideo, self.altoVideo)))
-                            self.insertar_registro(path)
-                            time.sleep(5)
-                            self.count += 1
-                            
-
-                    cv2.line(frame, (0, int(linea_deteccion)), (frame.shape[1], int(linea_deteccion)), (0, 0, 255), 2)
                     cv2.putText(frame, f'Cantidad desde {self.fecha_hora}: {self.count}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     frame = cv2.resize(frame, (self.anchoVideo, self.altoVideo))
