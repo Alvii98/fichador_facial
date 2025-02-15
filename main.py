@@ -12,11 +12,13 @@ from datetime import datetime
 import locale
 import threading
 # import math
-import pandas as pd
+import pandas as pd # pandas y openpyxl
 import requests
 # from requests.auth import HTTPBasicAuth
 import re
 import base64
+
+# Crear entorno virtualenv -p python3 mientorno
 # PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main.py
 # ejecutar para actualizar dependencias  pip install --upgrade setuptools
 class VentanaPrincipal(tk.Tk):
@@ -39,8 +41,8 @@ class VentanaPrincipal(tk.Tk):
         self.x = (self.winfo_screenwidth() // 2) - (self.ancho // 2)
         self.y = (self.winfo_screenheight() // 2) - (self.alto // 2) - 100
         self.geometry(f'{self.ancho}x{self.alto}+{self.x}+{self.y}')
-        # Cargar el archivo de imagen desde el disco
-        icono = tk.PhotoImage(file="img/ico.png")
+        icono = Image.open("img/ico.ico")
+        icono = ImageTk.PhotoImage(icono)
         # Establecerlo como ícono de la ventana
         self.iconphoto(True, icono)
         # PARA CUANDO ES DE PRUEBA
