@@ -68,6 +68,8 @@ class VentanaPrincipal(tk.Tk):
         # CARGO LIBRERIA Y OBTENGO LUGAR POR ESO LO COMENTE ARRIBA
         # threading.Thread(target=self.cargar_lib).start()
         self.giro_cara = 0
+        self.pos_cara = 0
+        self.validar_vida = 0
         self.okk = 0
         self.crear_widgets()
         self.update_clock()
@@ -474,23 +476,21 @@ class VentanaPrincipal(tk.Tk):
     def notificaciones(self,texto,color):
         if self.notificacion:
             self.notificacion = False
-        else:
-            self.notificacion = True
-            self.nueva_ventana.destroy()
-
-        self.nueva_ventana = tk.Toplevel()
-        self.nueva_ventana.title("Notificacion")
-        x = (self.winfo_screenwidth() // 2) - (600 // 2)
-        # y = (self.winfo_screenheight() // 2) - (40 // 2) - 100
-        y = int(self.winfo_screenheight() - (self.winfo_screenheight() * 0.20))
-        self.nueva_ventana.geometry(f'{600}x{40}+{x}+{y}')
-        self.notPrincipal = tk.Frame(self.nueva_ventana, bg=color)
-        self.notPrincipal.pack(side=tk.RIGHT, fill='both', expand=True)
-        self.lblNot = tk.Label(self.notPrincipal, text=texto, bg=color, fg="white", font=("Helvetica", 16))
-        self.lblNot.pack(side="top", pady=10)
-        threading.Thread(target=self.eliminarNotificacion).start()
+            self.nueva_ventana = tk.Toplevel()
+            self.nueva_ventana.title("Notificacion")
+            x = (self.winfo_screenwidth() // 2) - (600 // 2)
+            # y = (self.winfo_screenheight() // 2) - (40 // 2) - 100
+            y = int(self.winfo_screenheight() - (self.winfo_screenheight() * 0.20))
+            self.nueva_ventana.geometry(f'{600}x{40}+{x}+{y}')
+            self.notPrincipal = tk.Frame(self.nueva_ventana, bg=color)
+            self.notPrincipal.pack(side=tk.RIGHT, fill='both', expand=True)
+            self.lblNot = tk.Label(self.notPrincipal, text=texto, bg=color, fg="white", font=("Helvetica", 16))
+            self.lblNot.pack(side="top", pady=10)
+            threading.Thread(target=self.eliminarNotificacion).start()
 
     def prueba_vida(self, frame):
+        if self.okk == 10: return False
+        self.validar_vida = 0
         # Redimensionar la imagen para asegurar que cubra toda la imagen
         height, width = frame.shape[:2]
         new_width = 640
@@ -502,7 +502,6 @@ class VentanaPrincipal(tk.Tk):
         self.net.setInput(blob)
         self.outs = self.net.forward(self.output_layers)
 
-        # Mostrar información en la pantalla
         for out in self.outs:
             for detection in out:
                 scores = detection[5:]
@@ -511,17 +510,11 @@ class VentanaPrincipal(tk.Tk):
                 if confidence > 0.5:
                     if self.classes[class_id] == "cell phone" or self.classes[class_id] == "credential" or self.classes[class_id] == "dni":
                         self.okk = 10
+                        return False
 
+        # print(scores[class_id])
+        # print(self.classes[class_id])
 
-        print(scores[class_id])
-        print(self.classes[class_id])
-
-        if self.okk != 11 and self.okk != 12 and self.okk != 13:
-            self.okk = 11 # si es 11 paso la primera prueba
-        elif self.okk == 11:
-            self.okk = 12 # si es 12 paso la segunda prueba
-        else:
-            self.okk = 13
                 #     if self.giro_cara > 20:
                 #         print(self.giro_cara)
                 #         self.okk = 2
@@ -563,7 +556,6 @@ class VentanaPrincipal(tk.Tk):
             else:
                 self.notificaciones('Ocurrio un error al cargar el video, revise la camara por favor.','#df2626')
         else:
-            documento = self.documento.get()   
             ret, frame = cap.read()
             if ret:
 
@@ -574,11 +566,13 @@ class VentanaPrincipal(tk.Tk):
                     cv2.imshow('Reconocimiento facial', frame)
                     if self.okk == 0: self.okk = 1
                     else: self.okk = 3
-                    return self.after(10, self.validar_fichado)
+                    return self.after(20, self.validar_fichado)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:
                     cv2.destroyAllWindows()
+                    self.pos_cara = 0
+                    self.okk = 0
                     self.intentosFacial = 0
                     self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
                     self.foto.config(image=self.img)
@@ -587,44 +581,43 @@ class VentanaPrincipal(tk.Tk):
                 face_locations = fr.face_locations(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
 
                 for i,(top, right, bottom, left) in enumerate(face_locations):
-                    if self.okk == 10:
-                        break # SI ES IGUAL A 10 DETECTO UN TELEFONO Y 12 YA PASO LAS PRUEBAS
-                    if ((bottom - top) < 130) and self.okk != 11 and self.okk != 12:
+                    if self.okk == 10: break # SI ES IGUAL A 10 DETECTO UN TELEFONO 
+                    
+                    if ((bottom - top) < 130) and self.pos_cara >= 0 and self.pos_cara <= 10:
                         self.texto_informativo(frame,'Acerque la cara a la camara.')
-                        # cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
                         break
-                    elif ((bottom - top) > 130) and self.okk != 11 and self.okk != 12:
-                        if self.cara is None:
+                    elif ((bottom - top) > 130) and self.pos_cara >= 0 and self.pos_cara <= 10:
+                        self.pos_cara = self.pos_cara + 1
+                        if self.cara is None and self.pos_cara == 5:
                             self.cara = frame
                             cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
                             cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
                             cv2.imshow('Reconocimiento facial', frame)
                         else:
-                            self.texto_informativo(frame,'Aleje la cara de la camara.')
-
-                        threading.Thread(target=self.prueba_vida(frame)).start()
+                            self.texto_informativo(frame,'Estamos haciendo el reconocimiento..')
                         break
-                    elif ((bottom - top) > 130) and self.okk == 11  and self.okk == 12:
+                    elif ((bottom - top) > 130) and self.pos_cara >= 11 and self.pos_cara <= 20:
                         self.texto_informativo(frame,'Aleje la cara de la camara.')
                         break
-                    elif ((bottom - top) < 130):
-                        threading.Thread(target=self.prueba_vida(frame)).start()
+                    elif ((bottom - top) < 130) and self.pos_cara >= 11:
+                        self.pos_cara = self.pos_cara + 1
+                        self.texto_informativo(frame,'Estamos haciendo el reconocimiento..')
+                        if self.pos_cara >= 20:
+                            self.okk = 13
                         break
-                    # cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-
-                    # if ((bottom - top) > 130) and self.okk != 11:
-                    #     self.texto_informativo(frame,'Aleje la cara de la camara.')
-                    # elif ((bottom - top) > 130):
-                    #     self.texto_informativo(frame,'Aleje la cara de la camara.')
-
                 else:
-                    # self.okk = 0
-                    # self.giro_cara = 0
                     cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
                     cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
                     cv2.imshow('Reconocimiento facial', frame)
 
+                if self.validar_vida > 6 and self.okk != 10:
+                    threading.Thread(target=self.prueba_vida(frame)).start()
+                else: self.validar_vida = self.validar_vida + 1
+
+
                 if (self.intentosFacial > 3):
+                    self.pos_cara = 0
+                    self.okk = 0
                     self.intentosFacial = 0
                     self.documento.delete(0, tk.END)
                     self.documento2.delete(0, tk.END)
@@ -635,6 +628,7 @@ class VentanaPrincipal(tk.Tk):
                     self.notificaciones('No encontramos coincidencias con su rostro.','#df2626')
                     cv2.destroyAllWindows()
                 elif self.okk == 10:
+                    self.pos_cara = 0
                     self.okk = 0
                     self.intentosFacial = 0
                     self.documento.delete(0, tk.END)
@@ -645,7 +639,8 @@ class VentanaPrincipal(tk.Tk):
                     self.foto.config(image=self.img)
                     self.notificaciones('Detectamos un objeto inapropiado, vuelva a intentar.','#df2626')
                     cv2.destroyAllWindows()
-                elif self.okk == 13:
+                elif self.okk == 13 and self.cara is not None:
+                    self.pos_cara = 0
                     self.okk = 0
                     self.giro_cara = 0
 
@@ -671,14 +666,15 @@ class VentanaPrincipal(tk.Tk):
                             self.img = ImageTk.PhotoImage(imagen_pil)
                             self.foto.config(image=self.img)
                             # Formatear la fecha y hora como un ID único
-                            id = datetime.now().strftime('%Y%m%d%H%M')
-                            path = f'img/log/{id}_{documento}.png'
-                            if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
-                            cv2.imwrite(path, cv2.resize(self.cara, (self.anchoFich, self.altoFich)))
+                            # id = datetime.now().strftime('%Y%m%d%H%M')
+                            # path = f'img/log/{id}_{documento}.png'
+                            # if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
+                            # cv2.imwrite(path, cv2.resize(self.cara, (self.anchoFich, self.altoFich)))
                             self.documento.delete(0, tk.END)
                             self.documento2.delete(0, tk.END)
                             self.fechaYHora.delete(0, tk.END)
                             self.observacion.delete("1.0", tk.END)
+                            self.notificaciones(f'Fichado correctamente.','#35c82b')
 
                             # if self.documento3.get().strip() != '':
                             #     self.traer_registros(documento)
