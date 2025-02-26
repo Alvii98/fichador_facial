@@ -119,8 +119,9 @@ class VentanaPrincipal(tk.Tk):
         else:
             fecha = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+        base64_image = ''
         with open(archivo, 'rb') as file:
-            blob_data = file.read()
+            base64_image = base64.b64encode(file.read())
 
         data = {
             'tipo': 'INSERTAR REGISTRO',
@@ -130,7 +131,7 @@ class VentanaPrincipal(tk.Tk):
             'observacion': observacion,
             'fecha': fecha,
             'lugar': self.lugar.get(),
-            'foto': blob_data
+            'foto': base64_image
         }
         # self.verificar_api()
         try:
@@ -472,6 +473,8 @@ class VentanaPrincipal(tk.Tk):
         time.sleep(3)
         self.notificacion = True
         self.nueva_ventana.destroy()
+        self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+        self.foto.config(image=self.img)
 
     def notificaciones(self,texto,color):
         if self.notificacion:
@@ -491,14 +494,8 @@ class VentanaPrincipal(tk.Tk):
     def prueba_vida(self, frame):
         if self.okk == 10: return False
         self.validar_vida = 0
-        # Redimensionar la imagen para asegurar que cubra toda la imagen
-        height, width = frame.shape[:2]
-        new_width = 640
-        new_height = int((new_width / width) * height)
-        resized_frame = cv2.resize(frame, (new_width, new_height))
-
         # Detectar objetos
-        blob = cv2.dnn.blobFromImage(resized_frame, 0.00392, (new_width, new_height), (0, 0, 0), True, crop=False)
+        blob = cv2.dnn.blobFromImage(frame, 0.00392, (320, 320), (0, 0, 0), True, crop=False)
         self.net.setInput(blob)
         self.outs = self.net.forward(self.output_layers)
 
@@ -511,30 +508,6 @@ class VentanaPrincipal(tk.Tk):
                     if self.classes[class_id] == "cell phone" or self.classes[class_id] == "credential" or self.classes[class_id] == "dni":
                         self.okk = 10
                         return False
-
-        # print(scores[class_id])
-        # print(self.classes[class_id])
-
-                #     if self.giro_cara > 20:
-                #         print(self.giro_cara)
-                #         self.okk = 2
-                #     else:
-                #         self.giro_cara = self.giro_cara + 1
-
-        # if self.okk != 10:
-        #     shape = self.predictor(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), rect)
-        #     # distancia entre nariz y oreja izquierda
-        #     distancia = math.sqrt((shape.part(33).x - shape.part(16).x) ** 2 + (shape.part(33).y - shape.part(16).y) ** 2)
-        #     if self.giro_cara == 0: 
-        #         self.giro_cara = distancia
-        #     else:
-        #         self.texto_informativo(frame,'Gire la cara hacia la izquierda por favor..')
-        #     if distancia < (self.giro_cara - 20): # giro cara a la izquierda
-        #         self.okk = 2
-    
-    def limpiar_foto(self):
-        self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-        self.foto.config(image=self.img)
 
     def validar_fichado(self): 
         if self.cargar_video:
@@ -558,7 +531,6 @@ class VentanaPrincipal(tk.Tk):
         else:
             ret, frame = cap.read()
             if ret:
-
                 cv2.namedWindow('Reconocimiento facial', cv2.WINDOW_NORMAL)
                 if self.okk == 0 or self.okk == 1:
                     cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
@@ -583,12 +555,12 @@ class VentanaPrincipal(tk.Tk):
                 for i,(top, right, bottom, left) in enumerate(face_locations):
                     if self.okk == 10: break # SI ES IGUAL A 10 DETECTO UN TELEFONO 
                     
-                    if ((bottom - top) < 130) and self.pos_cara >= 0 and self.pos_cara <= 10:
+                    if ((bottom - top) < 130) and self.pos_cara <= 10:
                         self.texto_informativo(frame,'Acerque la cara a la camara.')
                         break
-                    elif ((bottom - top) > 130) and self.pos_cara >= 0 and self.pos_cara <= 10:
+                    elif ((bottom - top) > 130) and self.pos_cara <= 10:
                         self.pos_cara = self.pos_cara + 1
-                        if self.cara is None and self.pos_cara == 5:
+                        if self.cara is None and self.pos_cara >= 5:
                             self.cara = frame
                             cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
                             cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
@@ -596,7 +568,7 @@ class VentanaPrincipal(tk.Tk):
                         else:
                             self.texto_informativo(frame,'Estamos haciendo el reconocimiento..')
                         break
-                    elif ((bottom - top) > 130) and self.pos_cara >= 11 and self.pos_cara <= 20:
+                    elif ((bottom - top) > 130) and self.pos_cara >= 11:
                         self.texto_informativo(frame,'Aleje la cara de la camara.')
                         break
                     elif ((bottom - top) < 130) and self.pos_cara >= 11:
@@ -665,30 +637,22 @@ class VentanaPrincipal(tk.Tk):
                             imagen_pil = imagen_pil.resize((self.anchoFich, self.altoFich), Image.Resampling.LANCZOS)
                             self.img = ImageTk.PhotoImage(imagen_pil)
                             self.foto.config(image=self.img)
+                            documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
                             # Formatear la fecha y hora como un ID único
-                            # id = datetime.now().strftime('%Y%m%d%H%M')
-                            # path = f'img/log/{id}_{documento}.png'
-                            # if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
-                            # cv2.imwrite(path, cv2.resize(self.cara, (self.anchoFich, self.altoFich)))
+                            id = datetime.now().strftime('%Y%m%d%H%M')
+                            path = f'img/log/{id}_{documento}.png'
+                            if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
+                            cv2.imwrite(path, cv2.resize(self.cara, (self.anchoFich, self.altoFich)))
                             self.documento.delete(0, tk.END)
                             self.documento2.delete(0, tk.END)
                             self.fechaYHora.delete(0, tk.END)
                             self.observacion.delete("1.0", tk.END)
                             self.notificaciones(f'Fichado correctamente.','#35c82b')
 
-                            # if self.documento3.get().strip() != '':
-                            #     self.traer_registros(documento)
-                            # else:
-                            #     self.insertar_registro(documento, path)
-
-                            # if fecha != '' and cruce != '':
-                            #     # self.mensajes("Fichado correctamente.","#35c82b")
-                            #     print(f"Rostro detectado: {documento}")
-                            #     self.notificaciones(f'Fichado correctamente, {cruce} {fecha}','#35c82b')
-                            
-                            # self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-                            # self.foto.config(image=self.img)
-                            # threading.Thread(target=self.limpiar_foto).start()
+                            if self.documento3.get().strip() != '':
+                                self.traer_registros(self.documento3.get().strip())
+                            else:
+                                self.insertar_registro(documento, path)
                         else:
                             self.intentosFacial = self.intentosFacial + 1
                             texto = "Rostro detectado: Desconocido"
@@ -742,24 +706,26 @@ class VentanaPrincipal(tk.Tk):
                     'tipo': 'VALIDAR AGENTE',
                     'documento': documento
                 }
-                return self.validar_fichado()
+                # return self.validar_fichado()
 
-                # self.verificar_api()
+                self.verificar_api()
                 try:
                     response = requests.post(self.api, data=data)
              
                     if response.status_code == 200:
                         if response.json()['status'] == 'error':
-                            respuesta = messagebox.askyesno("Confirmar", f"El agente {documento} no esta registrado ¿Desea registrar este agente?")
-                            if respuesta:
-                                self.nombre_agente = simpledialog.askstring("Registrar Agente", "Ingrese el nombre del agente:")
-                                if self.nombre_agente:
-                                    print(f"Registrando agente {self.nombre_agente} con documento {documento}")
-                                    return self.validar_fichado()
-                                else:
-                                    messagebox.showwarning("Advertencia", "Debe ingresar un nombre para registrar al agente.")
+                            if self.documento3.get().strip() == '':
+                                respuesta = messagebox.askyesno("Confirmar", f"El agente {documento} no esta registrado ¿Desea registrar este agente?")
+                                if respuesta:
+                                    self.nombre_agente = simpledialog.askstring("Registrar Agente", "Ingrese el nombre del agente:")
+                                    if self.nombre_agente:
+                                        print(f"Registrando agente {self.nombre_agente} con documento {documento}")
+                                        return self.validar_fichado()
+                                    else:
+                                        messagebox.showwarning("Advertencia", "Debe ingresar un nombre para registrar al agente.")
+                            else:
+                                return self.notificaciones('El agente no existe en la base de datos.','#df2626')
                         else:
-                            self.foto_api = base64.b64decode(response.json()['data'][0]['foto'])
                             return self.validar_fichado()
                     else:
                         messagebox.showerror("Error de sistema", f"Error al intentar conectar con la API, intente mas tarde. Resp:{response.status_code}")
