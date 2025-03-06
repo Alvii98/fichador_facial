@@ -136,7 +136,7 @@ class VentanaPrincipal(tk.Tk):
         # self.verificar_api()
         try:
             response = requests.post(self.api, data=data)
-
+            
             # print(response)
             if response.json()['status'] == 'success':
                 self.notificaciones(response.json()['message'],'#35c82b')
@@ -147,6 +147,8 @@ class VentanaPrincipal(tk.Tk):
 
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error de sistema", "Error al intentar conectar con la API, intente mas tarde.")
+
+        os.remove(archivo)
     
     def borrar_registros(self):
         for item in self.tree.get_children():
@@ -720,6 +722,7 @@ class VentanaPrincipal(tk.Tk):
                                     self.nombre_agente = simpledialog.askstring("Registrar Agente", "Ingrese el nombre del agente:")
                                     if self.nombre_agente:
                                         print(f"Registrando agente {self.nombre_agente} con documento {documento}")
+                                        time.sleep(3)
                                         return self.validar_fichado()
                                     else:
                                         messagebox.showwarning("Advertencia", "Debe ingresar un nombre para registrar al agente.")
