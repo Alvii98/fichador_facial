@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
+from io import BytesIO
 import cv2 # opencv-python==4.9.0.80
 import numpy as np # numpy==1.26.3
 import face_recognition as fr # dlib-19.24.99-cp312-cp312-win_amd64.whl luego install face_recognition
@@ -133,11 +134,9 @@ class VentanaPrincipal(tk.Tk):
             'lugar': self.lugar.get(),
             'foto': base64_image
         }
-        # self.verificar_api()
         try:
             response = requests.post(self.api, data=data)
             
-            # print(response)
             if response.json()['status'] == 'success':
                 self.notificaciones(response.json()['message'],'#35c82b')
             elif response.json()['status'] == 'error':
@@ -589,7 +588,7 @@ class VentanaPrincipal(tk.Tk):
                 else: self.validar_vida = self.validar_vida + 1
 
 
-                if (self.intentosFacial > 3):
+                if (self.intentosFacial >= 3):
                     self.pos_cara = 0
                     self.okk = 0
                     self.intentosFacial = 0
@@ -618,11 +617,11 @@ class VentanaPrincipal(tk.Tk):
                     self.okk = 0
                     self.giro_cara = 0
 
-                    foto = self.foto_api
-
-                    if foto is None or foto == '':
+                    if self.foto_api is None or self.foto_api == '':
                         print('Comparando con la misma foto que el video.')
                         foto = self.cara
+                    else:
+                        foto = fr.load_image_file(BytesIO(self.foto_api))
 
                     face_encodings = fr.face_encodings(self.cara, face_locations)
                     # Encontrar los rostros en la imagen
@@ -635,7 +634,11 @@ class VentanaPrincipal(tk.Tk):
                         if True in matches:
                             cv2.destroyAllWindows()
                             self.intentosFacial = 0
-                            imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
+                            if self.foto_api is None or self.foto_api == '':
+                                imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
+                            else:
+                                foto = cv2.imdecode(np.frombuffer(self.foto_api, np.uint8), cv2.IMREAD_COLOR)
+                                imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
                             imagen_pil = imagen_pil.resize((self.anchoFich, self.altoFich), Image.Resampling.LANCZOS)
                             self.img = ImageTk.PhotoImage(imagen_pil)
                             self.foto.config(image=self.img)
@@ -678,6 +681,7 @@ class VentanaPrincipal(tk.Tk):
         documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
         documento = self.documento3.get() if self.documento3.get().strip() != '' else documento
         error = 0
+        self.foto_api = ''
         self.intentosFacial = 0
         if documento.strip() == '':
             self.documento.delete(0, tk.END)
@@ -710,10 +714,9 @@ class VentanaPrincipal(tk.Tk):
                 }
                 # return self.validar_fichado()
 
-                self.verificar_api()
+                # self.verificar_api()
                 try:
                     response = requests.post(self.api, data=data)
-             
                     if response.status_code == 200:
                         if response.json()['status'] == 'error':
                             if self.documento3.get().strip() == '':
@@ -729,6 +732,11 @@ class VentanaPrincipal(tk.Tk):
                             else:
                                 return self.notificaciones('El agente no existe en la base de datos.','#df2626')
                         else:
+                            if response.json()['data'][0]['foto'] != '':
+                                # with open(f'img/tmp/{documento}.png', 'wb') as f:
+                                #     f.write(base64.b64decode(response.json()['data'][0]['foto']))
+                                #     self.foto_api = f'img/tmp/{documento}.png'
+                                self.foto_api = base64.b64decode(response.json()['data'][0]['foto'])
                             return self.validar_fichado()
                     else:
                         messagebox.showerror("Error de sistema", f"Error al intentar conectar con la API, intente mas tarde. Resp:{response.status_code}")
