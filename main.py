@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
+from io import BytesIO
 import cv2 # opencv-python==4.9.0.80
 import numpy as np # numpy==1.26.3
 import face_recognition as fr # dlib-19.24.99-cp312-cp312-win_amd64.whl luego install face_recognition
@@ -25,21 +26,24 @@ class VentanaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Fichador facial 2.0")
-        self.ancho = 780
-        self.alto = 480
-        self.anchoVideo = 620
-        self.altoVideo = 380
-        self.anchoFich = 320
-        self.altoFich = 260
+        self.ancho = int((self.winfo_screenwidth()*60)/100)
+        self.alto = int((self.winfo_screenheight()*90)/100)
+        # print((self.winfo_screenheight()*25)/100)
+        # self.ancho = 780
+        # self.alto = 480
+        self.anchoVideoFrame = int((self.winfo_screenwidth()*50)/100)
+        self.altoVideoFrame = int((self.winfo_screenheight()*65)/100)
+        # self.anchoVideo = int((self.winfo_screenwidth()*30)/100)
+        # self.altoVideo = int((self.winfo_screenheight()*45)/100)
+        self.anchoVideo = 400
+        self.altoVideo = 400
         self.intentosFacial = 0
         self.notificacion = True
         self.cargar_video = True
         self.cara = None
-        self.xV = (self.winfo_screenwidth() // 2) - (self.anchoVideo // 2)
-        self.yV = (self.winfo_screenheight() // 2) - (self.altoVideo // 2) - 100
-        # Coordenadas para centrar app
         self.x = (self.winfo_screenwidth() // 2) - (self.ancho // 2)
-        self.y = (self.winfo_screenheight() // 2) - (self.alto // 2) - 100
+        # self.y = (self.winfo_screenheight() // 2) - (self.alto // 2)
+        self.y = 0 
         self.geometry(f'{self.ancho}x{self.alto}+{self.x}+{self.y}')
         icono = Image.open("img/ico.ico")
         icono = ImageTk.PhotoImage(icono)
@@ -67,8 +71,6 @@ class VentanaPrincipal(tk.Tk):
         self.predictor = ''
         # CARGO LIBRERIA Y OBTENGO LUGAR POR ESO LO COMENTE ARRIBA
         # threading.Thread(target=self.cargar_lib).start()
-        self.giro_cara = 0
-        self.pos_cara = 0
         self.validar_vida = 0
         self.okk = 0
         self.crear_widgets()
@@ -133,11 +135,9 @@ class VentanaPrincipal(tk.Tk):
             'lugar': self.lugar.get(),
             'foto': base64_image
         }
-        # self.verificar_api()
         try:
             response = requests.post(self.api, data=data)
-
-            # print(response)
+            
             if response.json()['status'] == 'success':
                 self.notificaciones(response.json()['message'],'#35c82b')
             elif response.json()['status'] == 'error':
@@ -147,6 +147,8 @@ class VentanaPrincipal(tk.Tk):
 
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error de sistema", "Error al intentar conectar con la API, intente mas tarde.")
+
+        os.remove(archivo)
     
     def borrar_registros(self):
         for item in self.tree.get_children():
@@ -396,8 +398,7 @@ class VentanaPrincipal(tk.Tk):
         self.observacion = tk.Text(self.frameDiferido, height=8, width=35, bg="#fff8e6", fg="black", font=("Helvetica", 10))
         self.observacion.grid(sticky="W")
         self.frameDiferido.pack_forget()
-        
-        self.foto = tk.Label(self.frameDatos, image=self.img, width=self.anchoFich, height=self.altoFich, borderwidth=2, relief="groove")
+        self.foto = tk.Label(self.frameDatos, image=self.img, width=self.anchoVideoFrame, height=self.altoVideoFrame, borderwidth=2, relief="groove")
         self.foto.grid(sticky="W")
 
         self.lblFich = tk.Label(self.frameDatos, text="", bg="#fff8e6", fg="#ffffff", font=("Helvetica", 15))
@@ -462,12 +463,20 @@ class VentanaPrincipal(tk.Tk):
         else:
             self.lblFich.config(text=txt, bg=color)
         
-    def texto_informativo(self,frame,texto):
-        cv2.putText(frame, texto, (3, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
-        # cv2.namedWindow('Reconocimiento facial', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
-        cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
-        cv2.imshow('Reconocimiento facial', frame)
+    def texto_informativo(self,frame1,texto = ''):
+        if texto != '':
+            cv2.putText(frame1, texto, (3, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
+        # frame1 = cv2.rotate(frame1, cv2.ROTATE_90_CLOCKWISE)
+        frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB)
+        if texto != 'Rostro detectado: Desconocido':
+            frame1 = cv2.resize(frame1, (self.anchoVideoFrame, self.altoVideoFrame))
+        frame_image = Image.fromarray(frame1)
+        if texto != 'Rostro detectado: Desconocido':
+            molde_imagen = Image.open("img/face.png").convert("RGBA")
+            molde_imagen = molde_imagen.resize((300, 280), Image.Resampling.LANCZOS)
+            frame_image.paste(molde_imagen, (int((self.anchoVideoFrame-300)/2), int((self.altoVideoFrame-280)/2)), molde_imagen) 
+        self.img = ImageTk.PhotoImage(frame_image)
+        self.foto.config(image=self.img)
 
     def eliminarNotificacion(self):
         time.sleep(3)
@@ -508,6 +517,15 @@ class VentanaPrincipal(tk.Tk):
                     if self.classes[class_id] == "cell phone" or self.classes[class_id] == "credential" or self.classes[class_id] == "dni":
                         self.okk = 10
                         return False
+        if self.okk < 3:
+            self.okk = 4
+        elif self.okk == 5:
+            self.okk = 6
+        elif self.okk == 6:
+            self.okk = 7
+        elif self.okk == 7:
+            self.okk = 8
+        
 
     def validar_fichado(self): 
         if self.cargar_video:
@@ -531,14 +549,14 @@ class VentanaPrincipal(tk.Tk):
         else:
             ret, frame = cap.read()
             if ret:
-                cv2.namedWindow('Reconocimiento facial', cv2.WINDOW_NORMAL)
+
                 if self.okk == 0 or self.okk == 1:
-                    cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
-                    cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
-                    cv2.imshow('Reconocimiento facial', frame)
-                    if self.okk == 0: self.okk = 1
-                    else: self.okk = 3
-                    return self.after(20, self.validar_fichado)
+                    self.texto_informativo(frame)
+                    if self.okk == 0: 
+                        self.okk = 1
+                    else: 
+                        self.okk = 2
+                    return self.after(10, self.validar_fichado)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:
@@ -550,45 +568,31 @@ class VentanaPrincipal(tk.Tk):
                     self.foto.config(image=self.img)
                     return False
 
-                face_locations = fr.face_locations(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-
+                encontro_face = 0
+                small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+                face_locations = fr.face_locations(cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY))
                 for i,(top, right, bottom, left) in enumerate(face_locations):
-                    if self.okk == 10: break # SI ES IGUAL A 10 DETECTO UN TELEFONO 
-                    
-                    if ((bottom - top) < 130) and self.pos_cara <= 10:
-                        self.texto_informativo(frame,'Acerque la cara a la camara.')
-                        break
-                    elif ((bottom - top) > 130) and self.pos_cara <= 10:
-                        self.pos_cara = self.pos_cara + 1
-                        if self.cara is None and self.pos_cara >= 5:
+                    encontro_face = encontro_face+1
+                    if (top > 25 and top < 45) and (right > 90 and right < 110) and (bottom > 70 and bottom < 90) and (left > 55 and left < 75):
+                        if self.okk == 4: 
+                            self.okk = 5
                             self.cara = frame
-                            cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
-                            cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
-                            cv2.imshow('Reconocimiento facial', frame)
-                        else:
-                            self.texto_informativo(frame,'Estamos haciendo el reconocimiento..')
-                        break
-                    elif ((bottom - top) > 130) and self.pos_cara >= 11:
-                        self.texto_informativo(frame,'Aleje la cara de la camara.')
-                        break
-                    elif ((bottom - top) < 130) and self.pos_cara >= 11:
-                        self.pos_cara = self.pos_cara + 1
-                        self.texto_informativo(frame,'Estamos haciendo el reconocimiento..')
-                        if self.pos_cara >= 20:
-                            self.okk = 13
-                        break
-                else:
-                    cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
-                    cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
-                    cv2.imshow('Reconocimiento facial', frame)
+                        else: 
+                            self.okk = 8
+                            self.texto_informativo(frame,'No se mueva, estamos haciendo el reconocimiento.')
+                            # if self.validar_vida > 4 and self.okk != 10:
+                            #     print('Entro prueba de vida') 
+                            #     threading.Thread(target=self.prueba_vida(frame)).start()
+                            # else: 
+                            #     self.validar_vida = self.validar_vida + 1
+                    else:
+                        self.texto_informativo(frame,'Coloque su cara dentro del marco.')
 
-                if self.validar_vida > 6 and self.okk != 10:
-                    threading.Thread(target=self.prueba_vida(frame)).start()
-                else: self.validar_vida = self.validar_vida + 1
-
-
-                if (self.intentosFacial > 3):
-                    self.pos_cara = 0
+                if encontro_face < 1:
+                    self.texto_informativo(frame,'Coloque su cara dentro del marco.')
+                
+                # print(self.okk)
+                if (self.intentosFacial >= 3):
                     self.okk = 0
                     self.intentosFacial = 0
                     self.documento.delete(0, tk.END)
@@ -600,7 +604,6 @@ class VentanaPrincipal(tk.Tk):
                     self.notificaciones('No encontramos coincidencias con su rostro.','#df2626')
                     cv2.destroyAllWindows()
                 elif self.okk == 10:
-                    self.pos_cara = 0
                     self.okk = 0
                     self.intentosFacial = 0
                     self.documento.delete(0, tk.END)
@@ -611,30 +614,39 @@ class VentanaPrincipal(tk.Tk):
                     self.foto.config(image=self.img)
                     self.notificaciones('Detectamos un objeto inapropiado, vuelva a intentar.','#df2626')
                     cv2.destroyAllWindows()
-                elif self.okk == 13 and self.cara is not None:
-                    self.pos_cara = 0
+                elif self.okk == 8 and self.cara is not None:
                     self.okk = 0
-                    self.giro_cara = 0
 
-                    foto = self.foto_api
-
-                    if foto is None or foto == '':
+                    if self.foto_api is None or self.foto_api == '':
                         print('Comparando con la misma foto que el video.')
                         foto = self.cara
-
+                    else:
+                        foto = self.cara
+                        # foto = fr.load_image_file(BytesIO(self.foto_api))
+                    
+                    self.cara = cv2.resize(self.cara, (self.anchoVideo, self.altoVideo))
                     face_encodings = fr.face_encodings(self.cara, face_locations)
+
+                    foto = cv2.resize(foto, (self.anchoVideo, self.altoVideo))
                     # Encontrar los rostros en la imagen
                     face_locations2 = fr.face_locations(foto)
                     face_encodings2 = fr.face_encodings(foto, face_locations2)
                     # for face_encoding in face_encodings:
                     if len(face_encodings) > 0 and len(face_encodings2) > 0:
                         matches = fr.compare_faces([face_encodings2[0]], face_encodings[0])
+                        distance = fr.face_distance([face_encodings2[0]], face_encodings[0])
+                        print(f"¿Coincidencia?: {matches[0]}")
+                        print(f"Distancia: {distance[0]}")
                         # Si se encuentra una coincidencia 
                         if True in matches:
                             cv2.destroyAllWindows()
                             self.intentosFacial = 0
-                            imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
-                            imagen_pil = imagen_pil.resize((self.anchoFich, self.altoFich), Image.Resampling.LANCZOS)
+                            if self.foto_api is None or self.foto_api == '':
+                                imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
+                            else:
+                                foto = cv2.imdecode(np.frombuffer(self.foto_api, np.uint8), cv2.IMREAD_COLOR)
+                                imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
+                            imagen_pil = imagen_pil.resize((self.anchoVideoFrame, self.altoVideoFrame), Image.Resampling.LANCZOS)
                             self.img = ImageTk.PhotoImage(imagen_pil)
                             self.foto.config(image=self.img)
                             documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
@@ -642,7 +654,7 @@ class VentanaPrincipal(tk.Tk):
                             id = datetime.now().strftime('%Y%m%d%H%M')
                             path = f'img/log/{id}_{documento}.png'
                             if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
-                            cv2.imwrite(path, cv2.resize(self.cara, (self.anchoFich, self.altoFich)))
+                            cv2.imwrite(path, cv2.resize(self.cara, (self.anchoVideo, self.altoVideo)))
                             self.documento.delete(0, tk.END)
                             self.documento2.delete(0, tk.END)
                             self.fechaYHora.delete(0, tk.END)
@@ -656,9 +668,9 @@ class VentanaPrincipal(tk.Tk):
                         else:
                             self.intentosFacial = self.intentosFacial + 1
                             texto = "Rostro detectado: Desconocido"
-                            self.texto_informativo(frame,texto)
+                            self.texto_informativo(self.cara,texto)
                             print(f"Rostro detectado: Desconocido intentos: {self.intentosFacial}")
-                            return self.after(10, self.validar_fichado)
+                            # return self.after(10, self.validar_fichado)
                 else:
                     return self.after(10, self.validar_fichado)
             else:
@@ -676,6 +688,7 @@ class VentanaPrincipal(tk.Tk):
         documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
         documento = self.documento3.get() if self.documento3.get().strip() != '' else documento
         error = 0
+        self.foto_api = ''
         self.intentosFacial = 0
         if documento.strip() == '':
             self.documento.delete(0, tk.END)
@@ -708,10 +721,9 @@ class VentanaPrincipal(tk.Tk):
                 }
                 # return self.validar_fichado()
 
-                self.verificar_api()
+                # self.verificar_api()
                 try:
                     response = requests.post(self.api, data=data)
-             
                     if response.status_code == 200:
                         if response.json()['status'] == 'error':
                             if self.documento3.get().strip() == '':
@@ -720,12 +732,18 @@ class VentanaPrincipal(tk.Tk):
                                     self.nombre_agente = simpledialog.askstring("Registrar Agente", "Ingrese el nombre del agente:")
                                     if self.nombre_agente:
                                         print(f"Registrando agente {self.nombre_agente} con documento {documento}")
+                                        time.sleep(3)
                                         return self.validar_fichado()
                                     else:
                                         messagebox.showwarning("Advertencia", "Debe ingresar un nombre para registrar al agente.")
                             else:
                                 return self.notificaciones('El agente no existe en la base de datos.','#df2626')
                         else:
+                            if response.json()['data'][0]['foto'] != '':
+                                # with open(f'img/tmp/{documento}.png', 'wb') as f:
+                                #     f.write(base64.b64decode(response.json()['data'][0]['foto']))
+                                #     self.foto_api = f'img/tmp/{documento}.png'
+                                self.foto_api = base64.b64decode(response.json()['data'][0]['foto'])
                             return self.validar_fichado()
                     else:
                         messagebox.showerror("Error de sistema", f"Error al intentar conectar con la API, intente mas tarde. Resp:{response.status_code}")
