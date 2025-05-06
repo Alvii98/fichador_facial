@@ -124,7 +124,7 @@ class VentanaPrincipal(tk.Tk):
         base64_image = ''
         with open(archivo, 'rb') as file:
             base64_image = base64.b64encode(file.read())
-
+        
         data = {
             'tipo': 'INSERTAR REGISTRO',
             'documento': documento,
@@ -678,11 +678,6 @@ class VentanaPrincipal(tk.Tk):
                             self.img = ImageTk.PhotoImage(imagen_pil)
                             self.foto.config(image=self.img)
                             documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
-                            # Formatear la fecha y hora como un ID único
-                            id = datetime.now().strftime('%Y%m%d%H%M')
-                            path = f'img/log/{id}_{documento}.png'
-                            if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
-                            cv2.imwrite(path, cv2.resize(self.cara, (self.anchoVideo, self.altoVideo)))
                             self.documento.delete(0, tk.END)
                             self.documento2.delete(0, tk.END)
                             self.fechaYHora.delete(0, tk.END)
@@ -697,6 +692,11 @@ class VentanaPrincipal(tk.Tk):
                                 else:
                                     print('Cargar registros.')
                             else:
+                                # Formatear la fecha y hora como un ID único
+                                id = datetime.now().strftime('%Y%m%d%H%M')
+                                path = f'img/log/{id}_{documento}.png'
+                                if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
+                                cv2.imwrite(path, cv2.resize(self.cara, (self.anchoVideo, self.altoVideo)))
                                 if self.api != '':
                                     self.insertar_registro(documento, path)
                                 else:
