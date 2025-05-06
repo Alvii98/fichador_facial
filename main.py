@@ -678,10 +678,7 @@ class VentanaPrincipal(tk.Tk):
                             self.img = ImageTk.PhotoImage(imagen_pil)
                             self.foto.config(image=self.img)
                             documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
-                            self.documento.delete(0, tk.END)
-                            self.documento2.delete(0, tk.END)
-                            self.fechaYHora.delete(0, tk.END)
-                            self.observacion.delete("1.0", tk.END)
+
                             self.nueva_ventana.destroy()
                             self.notificaciones(f'Fichado correctamente.','#35c82b')
                             self.cara = None
@@ -700,7 +697,11 @@ class VentanaPrincipal(tk.Tk):
                                 if self.api != '':
                                     self.insertar_registro(documento, path)
                                 else:
-                                    print('Registrado correctamente.')                                    
+                                    print('Registrado correctamente.')             
+                            self.documento.delete(0, tk.END)
+                            self.documento2.delete(0, tk.END)
+                            self.fechaYHora.delete(0, tk.END)
+                            self.observacion.delete("1.0", tk.END)                       
                         else:
                             self.intentosFacial = self.intentosFacial + 1
                             texto = "Rostro detectado: Desconocido"
