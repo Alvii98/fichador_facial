@@ -70,7 +70,7 @@ class VentanaPrincipal(tk.Tk):
         # CARGO LIBRERIA Y OBTENGO LUGAR POR ESO LO COMENTE ARRIBA
         # threading.Thread(target=self.cargar_lib).start()
         self.validar_vida = 0
-        self.creado = 0
+        self.nueva_ventana = None
         self.okk = 0
         self.crear_widgets()
         # self.video_molde()
@@ -529,27 +529,32 @@ class VentanaPrincipal(tk.Tk):
         if int(np.mean(histograma)) > 100 and int(laplacian_var) < 80:
             self.cara = frame
 
-    def video_molde(self,frame1,texto = ''):
-        if self.creado == 0:
+    def video_molde(self,frame,texto = ''):
+        if self.nueva_ventana is None:
+            self.nueva_ventana = tk.Toplevel()
+            self.nueva_ventana.title("Reconocimiento facial")
+            self.nueva_ventana.geometry(f'{self.anchoVideo}x{self.altoVideo}+{self.xV}+{self.y+20}')
+            self.foto_rec = tk.Label(self.nueva_ventana, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
+            self.foto_rec.pack(side="top", pady=10)
+        if not self.nueva_ventana.winfo_exists():
             self.nueva_ventana = tk.Toplevel()
             self.nueva_ventana.title("Reconocimiento facial")
             self.nueva_ventana.geometry(f'{self.anchoVideo}x{self.altoVideo}+{self.xV}+{self.y}')
             self.foto_rec = tk.Label(self.nueva_ventana, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
             self.foto_rec.pack(side="top", pady=10)
-            self.creado = 1
         if texto != '':
-            cv2.putText(frame1, texto, (13, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
-        # frame1 = cv2.rotate(frame1, cv2.ROTATE_90_CLOCKWISE)
-        frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB)
+            cv2.putText(frame, texto, (13, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
+        # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         if texto != 'Rostro detectado: Desconocido':
-            frame1 = cv2.resize(frame1, (self.anchoVideo, self.altoVideo))
-        frame_image = Image.fromarray(frame1)
+            frame = cv2.resize(frame, (self.anchoVideo, self.altoVideo))
+        frame_image = Image.fromarray(frame)
         if texto != 'Rostro detectado: Desconocido':
             molde_imagen = Image.open("img/face.png").convert("RGBA")
             molde_imagen = molde_imagen.resize((250, 230), Image.Resampling.LANCZOS)
             frame_image.paste(molde_imagen, (int((self.anchoVideo-250)/2), int((self.altoVideo-280)/2)), molde_imagen) 
-        img = ImageTk.PhotoImage(frame_image)
-        self.foto_rec.config(image=img)
+        self.img = ImageTk.PhotoImage(frame_image)
+        self.foto_rec.config(image=self.img)
 
     def validar_fichado(self): 
         if self.cargar_video:
@@ -585,6 +590,7 @@ class VentanaPrincipal(tk.Tk):
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:
                     cv2.destroyAllWindows()
+                    self.nueva_ventana.destroy()
                     self.pos_cara = 0
                     self.okk = 0
                     self.intentosFacial = 0
@@ -602,8 +608,9 @@ class VentanaPrincipal(tk.Tk):
                             # guarda el frame en self.cara si la calidad es buena
                             self.calidad_imagen(frame)
                             self.okk = 5
-                        # else: 
-                        self.video_molde(frame,'No se mueva, estamos haciendo el reconocimiento.')
+                            self.video_molde(frame)
+                        else:
+                            self.video_molde(frame,'No se mueva, estamos haciendo el reconocimiento.')
                     else:
                         self.video_molde(frame,'Coloque su cara dentro del marco.')
                 if encontro_face < 1:
@@ -619,6 +626,7 @@ class VentanaPrincipal(tk.Tk):
                     self.observacion.delete("1.0", tk.END)
                     self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
                     self.foto.config(image=self.img)
+                    self.nueva_ventana.destroy()
                     self.notificaciones('No encontramos coincidencias con su rostro.','#df2626')
                     cv2.destroyAllWindows()
                 elif self.okk == 10:
@@ -630,6 +638,7 @@ class VentanaPrincipal(tk.Tk):
                     self.observacion.delete("1.0", tk.END)
                     self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
                     self.foto.config(image=self.img)
+                    self.nueva_ventana.destroy()
                     self.notificaciones('Detectamos un objeto inapropiado, vuelva a intentar.','#df2626')
                     cv2.destroyAllWindows()
                 elif self.cara is not None:
@@ -678,12 +687,20 @@ class VentanaPrincipal(tk.Tk):
                             self.documento2.delete(0, tk.END)
                             self.fechaYHora.delete(0, tk.END)
                             self.observacion.delete("1.0", tk.END)
+                            self.nueva_ventana.destroy()
                             self.notificaciones(f'Fichado correctamente.','#35c82b')
+                            self.cara = None
 
                             if self.documento3.get().strip() != '':
-                                self.traer_registros(self.documento3.get().strip())
+                                if self.api != '':
+                                    self.traer_registros(self.documento3.get().strip())
+                                else:
+                                    print('Cargar registros.')
                             else:
-                                self.insertar_registro(documento, path)
+                                if self.api != '':
+                                    self.insertar_registro(documento, path)
+                                else:
+                                    print('Registrado correctamente.')                                    
                         else:
                             self.intentosFacial = self.intentosFacial + 1
                             texto = "Rostro detectado: Desconocido"
