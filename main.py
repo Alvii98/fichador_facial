@@ -57,8 +57,8 @@ class VentanaPrincipal(tk.Tk):
         self.classes = None
         threading.Thread(target=self.cargar_lib).start()
         self.menu_desplegado = False
-        # self.api = 'https://estudio6.site/fichado/api.php'
-        self.api = ''
+        self.api = 'https://estudio6.site/fichado/api.php'
+        # self.api = ''
         # self.api = 'https://www1.dnm.gov.ar/anexo/api.php'
         self.api_user = 'api_user'
         self.api_pass = 'api_password'
@@ -525,8 +525,7 @@ class VentanaPrincipal(tk.Tk):
 
         laplacian_var = cv2.Laplacian(imagen_gris, cv2.CV_64F).var()
         histograma = cv2.calcHist([imagen_gris], [0], None, [256], [0, 256])
-        print(int(np.mean(histograma)),int(laplacian_var))
-        if int(np.mean(histograma)) > 100 and int(laplacian_var) < 80:
+        if int(np.mean(histograma)) > 100 and int(laplacian_var) > 50:
             self.cara = frame
 
     def video_molde(self,frame,texto = ''):
@@ -546,13 +545,11 @@ class VentanaPrincipal(tk.Tk):
             cv2.putText(frame, texto, (13, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
         # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        if texto != 'Rostro detectado: Desconocido':
-            frame = cv2.resize(frame, (self.anchoVideo, self.altoVideo))
+        frame = cv2.resize(frame, (self.anchoVideo, self.altoVideo))
         frame_image = Image.fromarray(frame)
-        if texto != 'Rostro detectado: Desconocido':
-            molde_imagen = Image.open("img/face.png").convert("RGBA")
-            molde_imagen = molde_imagen.resize((250, 230), Image.Resampling.LANCZOS)
-            frame_image.paste(molde_imagen, (int((self.anchoVideo-250)/2), int((self.altoVideo-280)/2)), molde_imagen) 
+        molde_imagen = Image.open("img/face.png").convert("RGBA")
+        molde_imagen = molde_imagen.resize((250, 230), Image.Resampling.LANCZOS)
+        frame_image.paste(molde_imagen, (int((self.anchoVideo-250)/2), int((self.altoVideo-280)/2)), molde_imagen) 
         self.img = ImageTk.PhotoImage(frame_image)
         self.foto_rec.config(image=self.img)
 
@@ -588,7 +585,7 @@ class VentanaPrincipal(tk.Tk):
                     return self.after(10, self.validar_fichado)
 
                 key = cv2.waitKey(1) & 0xFF
-                if key == 27:
+                if key == 27 or not self.nueva_ventana.winfo_exists():
                     cv2.destroyAllWindows()
                     self.nueva_ventana.destroy()
                     self.pos_cara = 0
@@ -610,7 +607,7 @@ class VentanaPrincipal(tk.Tk):
                             self.okk = 5
                             self.video_molde(frame)
                         else:
-                            self.video_molde(frame,'No se mueva, estamos haciendo el reconocimiento.')
+                            self.video_molde(frame,'Estamos haciendo el reconocimiento.')
                     else:
                         self.video_molde(frame,'Coloque su cara dentro del marco.')
                 if encontro_face < 1:
@@ -648,7 +645,6 @@ class VentanaPrincipal(tk.Tk):
                         print('Comparando con la misma foto que el video.')
                         foto = self.cara
                     else:
-                        # foto = self.cara
                         foto = fr.load_image_file(BytesIO(self.foto_api))
                     
                     self.cara = cv2.resize(self.cara, (self.anchoVideo, self.altoVideo))
@@ -663,8 +659,6 @@ class VentanaPrincipal(tk.Tk):
                     if len(face_encodings) > 0 and len(face_encodings2) > 0:
                         matches = fr.compare_faces([face_encodings2[0]], face_encodings[0])
                         distance = fr.face_distance([face_encodings2[0]], face_encodings[0])
-                        print(f"¿Coincidencia?: {matches[0]}")
-                        print(f"Distancia: {distance[0]}")
                         # Si se encuentra una coincidencia 
                         if True in matches:
                             cv2.destroyAllWindows()
@@ -681,19 +675,19 @@ class VentanaPrincipal(tk.Tk):
 
                             self.nueva_ventana.destroy()
                             self.notificaciones(f'Fichado correctamente.','#35c82b')
-                            self.cara = None
 
                             if self.documento3.get().strip() != '':
+                                self.cara = None
                                 if self.api != '':
                                     self.traer_registros(self.documento3.get().strip())
                                 else:
                                     print('Cargar registros.')
                             else:
-                                # Formatear la fecha y hora como un ID único
                                 id = datetime.now().strftime('%Y%m%d%H%M')
                                 path = f'img/log/{id}_{documento}.png'
                                 if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
                                 cv2.imwrite(path, cv2.resize(self.cara, (self.anchoVideo, self.altoVideo)))
+                                self.cara = None
                                 if self.api != '':
                                     self.insertar_registro(documento, path)
                                 else:
@@ -704,10 +698,13 @@ class VentanaPrincipal(tk.Tk):
                             self.observacion.delete("1.0", tk.END)                       
                         else:
                             self.intentosFacial = self.intentosFacial + 1
-                            texto = "Rostro detectado: Desconocido"
+                            if self.intentosFacial == 1:
+                                texto = f"Rostro desconocido {self.intentosFacial} intento."
+                            else:
+                                texto = f"Rostro desconocido {self.intentosFacial} intentos."
                             self.video_molde(self.cara,texto)
                             print(f"Rostro detectado: Desconocido intentos: {self.intentosFacial}")
-                            # return self.after(10, self.validar_fichado)
+                            return self.after(60, self.validar_fichado)
                 else:
                     return self.after(10, self.validar_fichado)
             else:
@@ -759,8 +756,6 @@ class VentanaPrincipal(tk.Tk):
                     'tipo': 'VALIDAR AGENTE',
                     'documento': documento
                 }
-                # return self.validar_fichado()
-
                 # self.verificar_api()
                 try:
                     response = requests.post(self.api, data=data)
