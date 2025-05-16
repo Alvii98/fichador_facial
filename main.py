@@ -18,6 +18,7 @@ import requests
 # from requests.auth import HTTPBasicAuth
 import re
 import base64
+import sqlite3
 
 # Crear entorno virtualenv -p python3 mientorno
 # PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main.py
@@ -74,8 +75,39 @@ class VentanaPrincipal(tk.Tk):
         self.okk = 0
         self.crear_widgets()
         # self.video_molde()
+        self.nombre_lugar()
         self.update_clock()
         threading.Thread(target=self.validar_fichado).start()
+
+    def nombre_lugar(self):
+        conn = sqlite3.connect('datos.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS datos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        local TEXT NOT NULL,fecha DATETIME NOT NULL)''')
+        conn.commit()
+
+        cursor.execute('SELECT local FROM datos ORDER BY fecha DESC LIMIT 1')
+        resultado = cursor.fetchone()
+
+        lugar = self.lugar.get().strip()
+
+        if resultado:
+            self.lugar.delete(0, tk.END)
+            if resultado[0] != lugar and lugar != '':
+                self.lugar.insert(0, lugar)
+                cursor.execute('''INSERT INTO datos (local, fecha) VALUES (?, datetime('now'))''',(lugar,))
+            else:
+                self.lugar.insert(0, resultado[0])
+        else:
+            if self.lugar.get().strip() == '':
+                self.lugar.delete(0, tk.END)
+                self.lugar.insert(0, 'Local 1')
+            else:
+                cursor.execute('''INSERT INTO datos (local, fecha) VALUES (?, datetime('now'))''',(lugar,))
+
+        conn.close()
 
     def verificar_api(self):
         try:
@@ -193,11 +225,12 @@ class VentanaPrincipal(tk.Tk):
             else:
                 df = pd.DataFrame(rows, columns=("Agente", "Fecha", "Cruce"))
                 fecha = datetime.now().strftime('%Y%m%d%H%M')
-                archivo = f"registros_{fecha}.xlsxd"
+                archivo = f"registros_{fecha}.xlsx"
                 df.to_excel(archivo, index=False)
                 os.startfile(archivo)
                 self.notificaciones(f'Exportado correctamente {archivo}','#35c82b')
         except Exception as e:
+            print(e)
             self.notificaciones('Ocurrio un error al exportar.', '#ff0000')
 
     def validar_fecha_hora(self, event=None, *args):
@@ -282,7 +315,6 @@ class VentanaPrincipal(tk.Tk):
         
         self.lugar = tk.Entry(self.frameLugar, width=30, text="Local 1", bg="#fff8e6", fg="black", font=("Helvetica", 10))
         self.lugar.grid(sticky="W")
-        self.lugar.insert(0, "Local 1")
 
         self.frameFecha = tk.Frame(self.barraSuperior, bg="#1f2329")
         self.frameFecha.pack(side=tk.RIGHT)
@@ -306,7 +338,7 @@ class VentanaPrincipal(tk.Tk):
         boton = tk.Button(self.frameBotRegistros, text="Exportar a Excel", cursor="hand2", bg="green", fg="#fff8e6", command=self.exportar_excel)
         boton.grid(row=0, column=0, sticky="W", padx=5)
 
-        boton2 = tk.Button(self.frameBotRegistros, text="Eliminar registros", cursor="hand2", bg="red", fg="#fff8e6", command=self.borrar_registros)
+        boton2 = tk.Button(self.frameBotRegistros, text="Vaciar tabla", cursor="hand2", bg="red", fg="#fff8e6", command=self.borrar_registros)
         boton2.grid(row=0, column=1, sticky="W", padx=5)
         
         self.lblDoc3 = tk.Label(self.frameDocRegistros, text="Documento:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
@@ -756,6 +788,8 @@ class VentanaPrincipal(tk.Tk):
                     'tipo': 'VALIDAR AGENTE',
                     'documento': documento
                 }
+                self.nombre_lugar()
+
                 # self.verificar_api()
                 try:
                     response = requests.post(self.api, data=data)
