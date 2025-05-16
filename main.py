@@ -706,7 +706,6 @@ class VentanaPrincipal(tk.Tk):
                             documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
 
                             self.nueva_ventana.destroy()
-                            self.notificaciones(f'Fichado correctamente.','#35c82b')
 
                             if self.documento3.get().strip() != '':
                                 self.cara = None
@@ -715,6 +714,7 @@ class VentanaPrincipal(tk.Tk):
                                 else:
                                     print('Cargar registros.')
                             else:
+                                self.notificaciones(f'Fichado correctamente.','#35c82b')
                                 id = datetime.now().strftime('%Y%m%d%H%M')
                                 path = f'img/log/{id}_{documento}.png'
                                 if not os.path.exists(os.path.dirname(path)): os.makedirs(os.path.dirname(path))
@@ -726,6 +726,7 @@ class VentanaPrincipal(tk.Tk):
                                     print('Registrado correctamente.')             
                             self.documento.delete(0, tk.END)
                             self.documento2.delete(0, tk.END)
+                            self.documento3.delete(0, tk.END)
                             self.fechaYHora.delete(0, tk.END)
                             self.observacion.delete("1.0", tk.END)                       
                         else:
