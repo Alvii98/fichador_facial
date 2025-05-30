@@ -6,17 +6,19 @@ from io import BytesIO
 import cv2 # opencv-python==4.9.0.80
 import numpy as np # numpy==1.26.3
 import face_recognition as fr # dlib-19.24.99-cp312-cp312-win_amd64.whl luego install face_recognition
+# import dlib
 import os
 import time
 from datetime import datetime
 import locale
 import threading
+# import math
 import pandas as pd # pandas y openpyxl
 import requests
+# from requests.auth import HTTPBasicAuth
 import re
 import base64
 import sqlite3
-import configparser
 
 # Crear entorno virtualenv -p python3 mientorno
 # PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main.py
@@ -30,8 +32,6 @@ class VentanaPrincipal(tk.Tk):
         self.x = (self.winfo_screenwidth() // 2) - (self.ancho // 2)
         self.y = (self.winfo_screenheight() // 2) - (self.alto // 2) - 60
         self.geometry(f'{self.ancho}x{self.alto}+{self.x}+{self.y}')
-        # print((self.winfo_screenheight()*25)/100)
-        # 640x480 píxeles Mínimo: 540x380 píxeles
         self.anchoVideo = 540
         self.altoVideo = 380
         self.xV = (self.winfo_screenwidth() // 2) - (self.anchoVideo // 2)
@@ -44,40 +44,26 @@ class VentanaPrincipal(tk.Tk):
         icono = ImageTk.PhotoImage(icono)
         # Establecerlo como ícono de la ventana
         self.iconphoto(True, icono)
-        # PARA CUANDO ES DE PRUEBA
-        # id = datetime.now().strftime('%Y')
-        # if id != '2024':
-        #     quit()
         self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
-        self.imgFrame = None
         self.menu = ImageTk.PhotoImage(file="img/menu.png")
         # Cargar el modelo preentrenado (por ejemplo, un modelo YOLO)
-        self.net = None
-        self.outs = None
-        self.classes = None
+        # self.net = None
+        # self.outs = None
+        # self.classes = None
+        self.imgFrame = None
         self.menu_desplegado = False
-        api_url = ''
-        if os.path.exists('config.ini'):
-            config = configparser.ConfigParser()
-            config.read('config.ini')
-            api_url = config['CONFIG']['API_URL']
-            
-        if api_url == '':
-            self.api = 'https://estudio6.site/fichado/api.php'
-        else:    
-            self.api = api_url
-        self.foto_api = ''
+        self.api = 'https://estudio6.site/fichado/api.php'
+        self.api_user = 'api_user'
+        self.api_pass = 'api_password'
+        self.foto_api = None
         self.nombre_agente = ''
         if self.api != '':
             self.verificar_api()
         self.predictor = ''
-        # CARGO LIBRERIA Y OBTENGO LUGAR POR ESO LO COMENTE ARRIBA
-        # threading.Thread(target=self.cargar_lib).start()
         self.validar_vida = 0
         self.nueva_ventana = None
         self.okk = 0
         self.crear_widgets()
-        # self.video_molde()
         self.nombre_lugar()
         self.update_clock()
         threading.Thread(target=self.validar_fichado).start()
@@ -198,7 +184,7 @@ class VentanaPrincipal(tk.Tk):
                     self.tree.insert("", tk.END, values=(registro['documento'], registro['fecha'], registro['cruce']))
                     # self.tree.insert("", tk.END, values=registro)
 
-                self.notificaciones('Cargado correctamente','#35c82b')
+                self.notificaciones(response.json()['message'],'#35c82b')
             elif response.json()['status'] == 'error':
                 self.notificaciones(response.json()['message'],'#df2626')
             else:
@@ -428,7 +414,7 @@ class VentanaPrincipal(tk.Tk):
         self.frameDiferido.pack_forget()
         self.foto = tk.Label(self.frameDatos, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
         self.foto.grid(sticky="W")
-
+    
     def validate_input(self,value):
         # Verificar si el nuevo valor es un número y tiene una longitud máxima de 9 caracteres
         return (value.isdigit() and len(value) <= 9) or (len(value) == 0)
@@ -482,70 +468,101 @@ class VentanaPrincipal(tk.Tk):
         self.lblFecha.configure(text=fecha_actual)
         self.after(1000, self.update_clock)
 
+    def mensajes(self,txt,color):
+        if txt == '':
+            self.lblFich.config(text=txt, bg="#fff8e6")
+        else:
+            self.lblFich.config(text=txt, bg=color)
+        
+          
+    def texto_informativo(self,frame,texto = ''):
+        if texto != '':
+            cv2.putText(frame, texto, (3, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
+        cv2.namedWindow('Reconocimiento facial', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Reconocimiento facial', self.anchoVideo, self.altoVideo)
+        cv2.moveWindow('Reconocimiento facial', self.xV, self.yV)
+        cv2.imshow('Reconocimiento facial', frame)
+
     def eliminarNotificacion(self):
         time.sleep(3)
         self.notificacion = True
-        self.nueva_ventana2.destroy()
-        self.img = None
+        self.nueva_ventana.destroy()
         self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
         self.foto.config(image=self.img)
-
-    def eventoCerrarVentana(self):
-        self.intentosFacial = 100
 
     def notificaciones(self,texto,color):
         if self.notificacion:
             self.notificacion = False
-            self.nueva_ventana2 = tk.Toplevel()
-            self.nueva_ventana2.title("Notificacion")
+            self.nueva_ventana = tk.Toplevel()
+            self.nueva_ventana.title("Notificacion")
             x = (self.winfo_screenwidth() // 2) - (600 // 2)
+            # y = (self.winfo_screenheight() // 2) - (40 // 2) - 100
             y = int(self.winfo_screenheight() - (self.winfo_screenheight() * 0.20))
-            self.nueva_ventana2.geometry(f'{600}x{40}+{x}+{y}')
-            self.notPrincipal = tk.Frame(self.nueva_ventana2, bg=color)
+            self.nueva_ventana.geometry(f'{600}x{40}+{x}+{y}')
+            self.notPrincipal = tk.Frame(self.nueva_ventana, bg=color)
             self.notPrincipal.pack(side=tk.RIGHT, fill='both', expand=True)
             self.lblNot = tk.Label(self.notPrincipal, text=texto, bg=color, fg="white", font=("Helvetica", 16))
             self.lblNot.pack(side="top", pady=10)
             threading.Thread(target=self.eliminarNotificacion).start()
 
+    # def prueba_vida(self, frame):
+    #     if self.okk == 10: return False
+    #     self.validar_vida = 0
+    #     # Detectar objetos
+    #     blob = cv2.dnn.blobFromImage(frame, 0.00392, (320, 320), (0, 0, 0), True, crop=False)
+    #     self.net.setInput(blob)
+    #     self.outs = self.net.forward(self.output_layers)
+
+    #     for out in self.outs:
+    #         for detection in out:
+    #             scores = detection[5:]
+    #             class_id = np.argmax(scores)
+    #             confidence = scores[class_id]
+    #             if confidence > 0.5:
+    #                 if self.classes[class_id] == "cell phone" or self.classes[class_id] == "credential" or self.classes[class_id] == "dni":
+    #                     self.okk = 10
+    #                     return False
+    #     if self.okk < 3:
+    #         self.okk = 4
+    #     elif self.okk == 5:
+    #         self.okk = 6
+    #     elif self.okk == 6:
+    #         self.okk = 7
+    #     elif self.okk == 7:
+    #         self.okk = 8
+        
     def calidad_imagen(self,frame):
-        try:
-            imagen_gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            laplacian_var = cv2.Laplacian(imagen_gris, cv2.CV_64F).var()
-            histograma = cv2.calcHist([imagen_gris], [0], None, [256], [0, 256])
-            if int(np.mean(histograma)) > 100 and int(laplacian_var) > 50:
-                self.cara = frame
-        except:
-            print('ocurrio un error al medir la calidad')
+        imagen_gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        laplacian_var = cv2.Laplacian(imagen_gris, cv2.CV_64F).var()
+        histograma = cv2.calcHist([imagen_gris], [0], None, [256], [0, 256])
+        if int(np.mean(histograma)) > 100 and int(laplacian_var) > 50:
+            self.cara = frame
 
     def video_molde(self,frame,texto = ''):
-        try:
-            if self.nueva_ventana is None:
-                self.nueva_ventana = tk.Toplevel()
-                self.nueva_ventana.title("Reconocimiento facial")
-                self.nueva_ventana.protocol("WM_DELETE_WINDOW", self.eventoCerrarVentana)
-                self.nueva_ventana.geometry(f'{self.anchoVideo}x{self.altoVideo}+{self.xV}+{self.y+20}')
-                self.foto_rec = tk.Label(self.nueva_ventana, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
-                self.foto_rec.pack(side="top", pady=10)
-            elif not self.nueva_ventana.winfo_exists():
-                self.nueva_ventana = tk.Toplevel()
-                self.nueva_ventana.title("Reconocimiento facial")
-                self.nueva_ventana.protocol("WM_DELETE_WINDOW", self.eventoCerrarVentana)
-                self.nueva_ventana.geometry(f'{self.anchoVideo}x{self.altoVideo}+{self.xV}+{self.y}')
-                self.foto_rec = tk.Label(self.nueva_ventana, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
-                self.foto_rec.pack(side="top", pady=10)
-            if texto != '':
-                cv2.putText(frame, texto, (13, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
-            # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame = cv2.resize(frame, (self.anchoVideo, self.altoVideo))
-            frame_image = Image.fromarray(frame)
-            molde_imagen = Image.open("img/face.png").convert("RGBA")
-            molde_imagen = molde_imagen.resize((250, 230), Image.Resampling.LANCZOS)
-            frame_image.paste(molde_imagen, (int((self.anchoVideo-250)/2), int((self.altoVideo-280)/2)), molde_imagen) 
-            self.imgFrame = ImageTk.PhotoImage(frame_image)
-            self.foto_rec.config(image=self.imgFrame)
-        except Exception as e:
-            print(f"Error en video_molde: {e}")
+        if self.nueva_ventana is None:
+            self.nueva_ventana = tk.Toplevel()
+            self.nueva_ventana.title("Reconocimiento facial")
+            self.nueva_ventana.geometry(f'{self.anchoVideo}x{self.altoVideo}+{self.xV}+{self.y+20}')
+            self.foto_rec = tk.Label(self.nueva_ventana, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
+            self.foto_rec.pack(side="top", pady=10)
+        if not self.nueva_ventana.winfo_exists():
+            self.nueva_ventana = tk.Toplevel()
+            self.nueva_ventana.title("Reconocimiento facial")
+            self.nueva_ventana.geometry(f'{self.anchoVideo}x{self.altoVideo}+{self.xV}+{self.y}')
+            self.foto_rec = tk.Label(self.nueva_ventana, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
+            self.foto_rec.pack(side="top", pady=10)
+        if texto != '':
+            cv2.putText(frame, texto, (13, 42), cv2.FONT_HERSHEY_SIMPLEX, 0.80, (0, 0, 0), 2)
+        # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.resize(frame, (self.anchoVideo, self.altoVideo))
+        frame_image = Image.fromarray(frame)
+        molde_imagen = Image.open("img/face.png").convert("RGBA")
+        molde_imagen = molde_imagen.resize((250, 230), Image.Resampling.LANCZOS)
+        frame_image.paste(molde_imagen, (int((self.anchoVideo-250)/2), int((self.altoVideo-280)/2)), molde_imagen) 
+        self.imgFrame = ImageTk.PhotoImage(frame_image)
+        self.foto_rec.config(image=self.imgFrame)
 
     def validar_fichado(self): 
         if self.cargar_video:
@@ -553,7 +570,7 @@ class VentanaPrincipal(tk.Tk):
             self.lblDoc.configure(text='Cargando video..')
             self.lblDoc2.configure(text='Cargando video..')
             self.lblDoc3.configure(text='Cargando video..')
-            cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+            cap = cv2.VideoCapture(0)
             if cap.isOpened():
                 self.cargar_video = False
                 self.documento.config(state="normal")
@@ -569,72 +586,112 @@ class VentanaPrincipal(tk.Tk):
         else:
             ret, frame = cap.read()
             if ret:
-                if self.intentosFacial == 100:
+                if self.okk == 0 or self.okk == 1:
+                    # self.texto_informativo(frame)
+                    self.video_molde(frame)
+                    if self.okk == 0: 
+                        self.okk = 1
+                    else: 
+                        self.okk = 2
+                    return self.after(10, self.validar_fichado)
+
+                key = cv2.waitKey(1) & 0xFF
+                if key == 27 or not self.nueva_ventana.winfo_exists():
+                    cv2.destroyAllWindows()
+                    self.nueva_ventana.destroy()
+                    self.pos_cara = 0
                     self.okk = 0
                     self.intentosFacial = 0
+                    self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+                    self.foto.config(image=self.img)
                     return False
 
-                recon = 0
+                encontro_face = 0
                 small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
                 face_locations = fr.face_locations(cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY))
                 for i,(top, right, bottom, left) in enumerate(face_locations):
+                    encontro_face = 1
                     if (top > 16 and top < 36) and (right > 96 and right < 116) and (bottom > 68 and bottom < 88) and (left > 45 and left < 65):
                         if self.cara is None: 
-                            self.video_molde(frame)
-                            recon = 1
                             # guarda el frame en self.cara si la calidad es buena
                             self.calidad_imagen(frame)
-                            self.cara = frame
+                            # self.cara = frame
+                            self.okk = 5
+                            self.video_molde(frame)
                         else:
-                            recon = 1
                             self.video_molde(frame,'Estamos haciendo el reconocimiento.')
                     else:
-                        recon = 1
                         self.video_molde(frame,'Coloque su cara dentro del marco.')
-                
-                if recon == 0:
+                if encontro_face < 1:
                     self.video_molde(frame,'Coloque su cara dentro del marco.')
-
-                if (self.intentosFacial >= 3 and self.intentosFacial != 100):
+                
+                # print(self.okk)
+                if (self.intentosFacial >= 3):
                     self.okk = 0
                     self.intentosFacial = 0
                     self.documento.delete(0, tk.END)
                     self.documento2.delete(0, tk.END)
                     self.fechaYHora.delete(0, tk.END)
                     self.observacion.delete("1.0", tk.END)
+                    self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+                    self.foto.config(image=self.img)
+                    self.nueva_ventana.destroy()
                     self.notificaciones('No encontramos coincidencias con su rostro.','#df2626')
+                    cv2.destroyAllWindows()
+                elif self.okk == 10:
+                    self.okk = 0
+                    self.intentosFacial = 0
+                    self.documento.delete(0, tk.END)
+                    self.documento2.delete(0, tk.END)
+                    self.fechaYHora.delete(0, tk.END)
+                    self.observacion.delete("1.0", tk.END)
+                    self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+                    self.foto.config(image=self.img)
+                    self.nueva_ventana.destroy()
+                    self.notificaciones('Detectamos un objeto inapropiado, vuelva a intentar.','#df2626')
+                    cv2.destroyAllWindows()
                 elif self.cara is not None:
                     self.okk = 0
+
                     if self.foto_api is None or self.foto_api == '':
                         print('Comparando con la misma foto que el video.')
                         foto = self.cara
                     else:
-                        foto = fr.load_image_file(BytesIO(self.foto_api))
-                    
-                    self.cara = cv2.resize(self.cara, (self.anchoVideo, self.altoVideo))
+                        decodFoto = BytesIO(self.foto_api)
+                        foto = fr.load_image_file(decodFoto)
+
+                    # self.cara = cv2.resize(self.cara, (self.anchoVideo, self.altoVideo))
                     face_locations = fr.face_locations(cv2.cvtColor(self.cara, cv2.COLOR_BGR2GRAY))
                     face_encodings = fr.face_encodings(self.cara, face_locations)
 
-                    foto = cv2.resize(foto, (self.anchoVideo, self.altoVideo))
+                    # foto = cv2.resize(foto, (self.anchoVideo, self.altoVideo))
                     # Encontrar los rostros en la imagen
                     face_locations2 = fr.face_locations(cv2.cvtColor(foto, cv2.COLOR_BGR2GRAY))
                     face_encodings2 = fr.face_encodings(foto, face_locations2)
                     # for face_encoding in face_encodings:
                     if len(face_encodings) > 0 and len(face_encodings2) > 0:
                         matches = fr.compare_faces([face_encodings2[0]], face_encodings[0])
+                        # distance = fr.face_distance([face_encodings2[0]], face_encodings[0])
                         # Si se encuentra una coincidencia 
                         if True in matches:
+                            cv2.destroyAllWindows()
                             self.intentosFacial = 0
                             if self.foto_api is None or self.foto_api == '':
                                 imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
+                                imagen_pil = imagen_pil.resize((self.anchoVideo, self.altoVideo), Image.Resampling.LANCZOS)
+                                self.img = ImageTk.PhotoImage(imagen_pil)
+                                self.foto.config(image=self.img)
+                                imagen_pil.close()
                             else:
-                                foto = cv2.imdecode(np.frombuffer(self.foto_api, np.uint8), cv2.IMREAD_COLOR)
-                                imagen_pil = Image.fromarray(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
-                            imagen_pil = imagen_pil.resize((self.anchoVideo, self.altoVideo), Image.Resampling.LANCZOS)
-                            self.imgFrame = None
-                            self.imgFrame = ImageTk.PhotoImage(imagen_pil)
-                            self.foto.config(image=self.imgFrame)
+                                imagen_pil = Image.open(decodFoto)
+                                imagen_pil = imagen_pil.resize((self.anchoVideo, self.altoVideo), Image.Resampling.LANCZOS)
+                                self.img = ImageTk.PhotoImage(imagen_pil)
+                                self.foto.config(image=self.img)
+                                imagen_pil.close()
+                                decodFoto.close()
                             documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
+
+                            self.nueva_ventana.destroy()
 
                             if self.documento3.get().strip() != '':
                                 self.cara = None
@@ -666,13 +723,11 @@ class VentanaPrincipal(tk.Tk):
                                 texto = f"Rostro desconocido {self.intentosFacial} intentos."
                             self.video_molde(self.cara,texto)
                             print(f"Rostro detectado: Desconocido intentos: {self.intentosFacial}")
-                            return self.after(10, self.validar_fichado)
-                    else:
-                        return self.after(10, self.validar_fichado)
+                            return self.after(60, self.validar_fichado)
                 else:
                     return self.after(10, self.validar_fichado)
             else:
-                cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+                cap = cv2.VideoCapture(0)
                 if cap.isOpened():
                     self.cargar_video = False
                     self.documento.config(state="normal")
@@ -686,12 +741,14 @@ class VentanaPrincipal(tk.Tk):
         documento = self.documento.get() if self.documento.get().strip() != '' else self.documento2.get()
         documento = self.documento3.get() if self.documento3.get().strip() != '' else documento
         error = 0
+        self.foto_api = None
         self.cara = None
-        self.foto_api = ''
         self.intentosFacial = 0
         if documento.strip() == '':
             self.documento.delete(0, tk.END)
             self.documento2.delete(0, tk.END)
+            self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
+            self.foto.config(image=self.img)
             return self.notificaciones('Ingrese el numero de documento.','#df2626')
         else:
             if self.documento2.get().strip() != '':
@@ -742,8 +799,9 @@ class VentanaPrincipal(tk.Tk):
                             if response.json()['data'][0]['foto'] != '':
                                 # with open(f'img/tmp/{documento}.png', 'wb') as f:
                                 #     f.write(base64.b64decode(response.json()['data'][0]['foto']))
-                                #     self.foto_api = f'img/tmp/{documento}.png'
+                                # self.foto_api = f'img/tmp/{documento}.png'
                                 self.foto_api = base64.b64decode(response.json()['data'][0]['foto'])
+                            
                             return self.validar_fichado()
                     else:
                         messagebox.showerror("Error de sistema", f"Error al intentar conectar con la API, intente mas tarde. Resp:{response.status_code}")
