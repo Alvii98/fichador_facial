@@ -6,19 +6,17 @@ from io import BytesIO
 import cv2 # opencv-python==4.9.0.80
 import numpy as np # numpy==1.26.3
 import face_recognition as fr # dlib-19.24.99-cp312-cp312-win_amd64.whl luego install face_recognition
-# import dlib
 import os
 import time
 from datetime import datetime
 import locale
 import threading
-# import math
 import pandas as pd # pandas y openpyxl
 import requests
-# from requests.auth import HTTPBasicAuth
 import re
 import base64
 import sqlite3
+import configparser
 
 # Crear entorno virtualenv -p python3 mientorno
 # PARA EXE: pyinstaller --onefile --windowed --add-data "libs/shape_predictor_68_face_landmarks.dat;face_recognition_models/models" --add-data "libs/dlib_face_recognition_resnet_model_v1.dat;face_recognition_models/models" --add-data "libs/shape_predictor_5_face_landmarks.dat;face_recognition_models/models" --add-data "libs/mmod_human_face_detector.dat;face_recognition_models/models" main.py
@@ -26,7 +24,7 @@ import sqlite3
 class VentanaPrincipal(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Fichador facial 2.0")
+        self.title("Fichador facial 2.5")
         self.ancho = 780
         self.alto = 550
         self.x = (self.winfo_screenwidth() // 2) - (self.ancho // 2)
@@ -46,29 +44,27 @@ class VentanaPrincipal(tk.Tk):
         self.iconphoto(True, icono)
         self.img = ImageTk.PhotoImage(Image.open("img/foto.jpeg"))
         self.menu = ImageTk.PhotoImage(file="img/menu.png")
-        # Cargar el modelo preentrenado (por ejemplo, un modelo YOLO)
-        # self.net = None
-        # self.outs = None
-        # self.classes = None
+        self.crear_widgets()
         self.imgFrame = None
         self.menu_desplegado = False
-        self.api = 'https://estudio6.site/fichado/api.php'
-        self.api_user = 'api_user'
-        self.api_pass = 'api_password'
+        if os.path.exists('config.ini'):
+            config = configparser.ConfigParser()
+            config.read('config.ini')
+            self.api = config['CONFIG']['API_URL']
+        else:
+            self.api = ''
         self.foto_api = None
         self.nombre_agente = ''
-        if self.api != '':
-            self.verificar_api()
+        self.verificar_api()
         self.predictor = ''
         self.validar_vida = 0
         self.nueva_ventana = None
         self.okk = 0
-        self.crear_widgets()
-        self.nombre_lugar()
+        self.nombre_lugar(False)
         self.update_clock()
         threading.Thread(target=self.validar_fichado).start()
 
-    def nombre_lugar(self):
+    def nombre_lugar(self,guardar):
         conn = sqlite3.connect('datos.db')
         cursor = conn.cursor()
         
@@ -76,28 +72,37 @@ class VentanaPrincipal(tk.Tk):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         local TEXT NOT NULL,fecha DATETIME NOT NULL)''')
         conn.commit()
+        
+        if guardar:
+            if self.usuario.get().strip() == '' and self.clave.get().strip() == '':
+                return self.notificaciones('Ingrese las credenciales.','#df2626')
+            if self.usuario.get().strip() != 'admin':
+                return self.notificaciones('Usuario incorrecto.','#df2626')
+            elif self.clave.get().strip() != 'f1ch4d0s':
+                return self.notificaciones('Clave incorrecta.','#df2626')
+            else:
+                lugar = self.lugar.get().strip()
+                cursor.execute('''INSERT INTO datos (local, fecha) VALUES (?, datetime('now'))''',(lugar,))
+                conn.commit()
+                self.notificaciones('Cargado correctamente','#35c82b')
+                self.usuario.delete(0, tk.END)
+                self.clave.delete(0, tk.END)
 
         cursor.execute('SELECT local FROM datos ORDER BY id DESC LIMIT 1')
         resultado = cursor.fetchone()
 
         lugar = self.lugar.get().strip()
         if resultado:
-            if resultado[0] != lugar and lugar != '':
-                cursor.execute('''INSERT INTO datos (local, fecha) VALUES (?, datetime('now'))''',(lugar,))
-                conn.commit()
-            else:
-                self.lugar.delete(0, tk.END)
-                if resultado[0] == '':
-                    self.lugar.insert(0, 'Local 1')
-                else:
-                    self.lugar.insert(0, resultado[0])
-        else:
-            if lugar == '':
+            self.lugar.delete(0, tk.END)
+            if resultado[0] == '':
                 self.lugar.insert(0, 'Local 1')
+                self.TituloLugar.config(text='Local 1')
             else:
-                cursor.execute('''INSERT INTO datos (local, fecha) VALUES (?, datetime('now'))''',(lugar,))
-                conn.commit()
-
+                self.lugar.insert(0, resultado[0])
+                self.TituloLugar.config(text=resultado[0])
+        else:
+            self.lugar.insert(0, 'Local 1')
+            self.TituloLugar.config(text='Local 1')
         conn.close()
 
     def verificar_api(self):
@@ -160,7 +165,7 @@ class VentanaPrincipal(tk.Tk):
             messagebox.showerror("Error de sistema", "Error al intentar conectar con la API, intente mas tarde.")
 
         os.remove(archivo)
-    
+
     def borrar_registros(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -184,7 +189,7 @@ class VentanaPrincipal(tk.Tk):
                     self.tree.insert("", tk.END, values=(registro['documento'], registro['fecha'], registro['cruce']))
                     # self.tree.insert("", tk.END, values=registro)
 
-                self.notificaciones(response.json()['message'],'#35c82b')
+                self.notificaciones('Cargado correctamente','#35c82b')
             elif response.json()['status'] == 'error':
                 self.notificaciones(response.json()['message'],'#df2626')
             else:
@@ -280,20 +285,20 @@ class VentanaPrincipal(tk.Tk):
         self.botRegistros = tk.Button(self.menuLateral, text="Registros", font=("Helvetica", 14), bg="#2a3138", fg="white", width=15, cursor="hand2", command=self.clickRegistros)
         self.botRegistros.pack(side=tk.TOP)
 
+        self.botLocal = tk.Button(self.menuLateral, text="Nombre de local", font=("Helvetica", 14), bg="#2a3138", fg="white", width=15, cursor="hand2", command=self.clickLocal)
+        self.botLocal.pack(side=tk.TOP)
+
         self.cuerpoPrincipal = tk.Frame(self, bg="#fff8e6")
         self.cuerpoPrincipal.pack(side=tk.RIGHT, fill='both', expand=True)
 
         boton = tk.Button(self.barraSuperior, image=self.menu, cursor="hand2", width=32, height=32, command=self.expandir_menu)
         boton.pack(side=tk.LEFT, padx=10)
-
+        
         self.frameLugar = tk.Frame(self.barraSuperior, bg="#1f2329")
         self.frameLugar.pack(side=tk.LEFT)
         
-        self.lblLugar = tk.Label(self.frameLugar, text="Nombre del local:", bg="#1f2329", fg="white", font=("Helvetica", 10))
-        self.lblLugar.grid(sticky="W")
-        
-        self.lugar = tk.Entry(self.frameLugar, width=30, text="Local 1", bg="#fff8e6", fg="black", font=("Helvetica", 10))
-        self.lugar.grid(sticky="W")
+        self.TituloLugar = tk.Label(self.frameLugar, text="Nombre del local:", bg="#1f2329", fg="white", font=("Helvetica", 30))
+        self.TituloLugar.grid(sticky="W")
 
         self.frameFecha = tk.Frame(self.barraSuperior, bg="#1f2329")
         self.frameFecha.pack(side=tk.RIGHT)
@@ -303,10 +308,9 @@ class VentanaPrincipal(tk.Tk):
 
         self.lblFecha = tk.Label(self.frameFecha, text='', bg="#1f2329", fg="white", font=("Helvetica", 15))
         self.lblFecha.grid()
-        
+
         self.frameRegistros = tk.Frame(self.cuerpoPrincipal, bg="#fff8e6")
         self.frameRegistros.pack(fill=tk.BOTH, expand=True)
-
 
         self.frameDocRegistros = tk.Frame(self.frameRegistros, bg="#fff8e6")
         self.frameDocRegistros.pack(side=tk.TOP, pady=5)
@@ -319,6 +323,9 @@ class VentanaPrincipal(tk.Tk):
 
         boton2 = tk.Button(self.frameBotRegistros, text="Vaciar tabla", cursor="hand2", bg="red", fg="#fff8e6", command=self.borrar_registros)
         boton2.grid(row=0, column=1, sticky="W", padx=5)
+
+        boton3 = tk.Button(self.frameBotRegistros, text="Buscar registros", cursor="hand2", bg="#255a6e", fg="#fff8e6", command=self.enter)
+        boton3.grid(row=0, column=2, sticky="W", padx=5)
         
         self.lblDoc3 = tk.Label(self.frameDocRegistros, text="Documento:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
         self.lblDoc3.grid(sticky="W")
@@ -358,6 +365,32 @@ class VentanaPrincipal(tk.Tk):
 
         self.lblDoc = tk.Label(self.frameDatos, text="Presione Enter para fichar.", bg="#fff8e6", fg="#707070", font=("Helvetica", 10))
         self.lblDoc.grid(sticky="W")
+
+        self.frameLocal = tk.Frame(self.cuerpoPrincipal, bg="#fff8e6")
+        self.frameLocal.pack(fill=tk.BOTH, expand=True)
+
+        self.lblUsuario = tk.Label(self.frameLocal, text="Usuario:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lblUsuario.grid(sticky="W")
+
+        self.usuario = tk.Entry(self.frameLocal, width=30, bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.usuario.grid(sticky="W")
+
+        self.lblClave = tk.Label(self.frameLocal, text="Clave:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lblClave.grid(sticky="W")
+
+        self.clave = tk.Entry(self.frameLocal, width=30, bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.clave.grid(sticky="W")
+
+        self.lblLugar = tk.Label(self.frameLocal, text="Nombre del local:", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lblLugar.grid(sticky="W")
+        
+        self.lugar = tk.Entry(self.frameLocal, width=30, text="Local 1", bg="#fff8e6", fg="black", font=("Helvetica", 10))
+        self.lugar.grid(sticky="W")
+
+        botonLocal = tk.Button(self.frameLocal, text="Guardar nombre", cursor="hand2", bg="#24bb30", fg="#fff8e6", command=lambda: self.nombre_lugar(True))
+        botonLocal.grid(sticky="W",pady=5)
+
+        self.frameLocal.pack_forget()
 
         self.frameDiferido = tk.Frame(self.cuerpoPrincipal, bg="#fff8e6")
         self.frameDiferido.pack(fill=tk.BOTH, expand=True)
@@ -412,6 +445,7 @@ class VentanaPrincipal(tk.Tk):
         botonDif = tk.Button(self.frameDiferido, text="Enviar solicitud de registro", cursor="hand2", bg="#24bb30", fg="#fff8e6", command=self.enter)
         botonDif.grid(sticky="W",pady=5)
         self.frameDiferido.pack_forget()
+        
         self.foto = tk.Label(self.frameDatos, image=self.img, width=self.anchoVideo, height=self.altoVideo, borderwidth=2, relief="groove")
         self.foto.grid(sticky="W")
     
@@ -423,6 +457,7 @@ class VentanaPrincipal(tk.Tk):
         self.botInicio.config(fg="gray")
         self.botDiferido.config(fg="white")
         self.botRegistros.config(fg="white")
+        self.botLocal.config(fg="white")
         self.documento2.delete(0, tk.END)
         self.documento3.delete(0, tk.END)
         self.fechaYHora.delete(0, tk.END)
@@ -430,21 +465,25 @@ class VentanaPrincipal(tk.Tk):
         self.frameDatos.pack(side=tk.TOP, pady=10)
         self.frameRegistros.pack_forget()
         self.frameDiferido.pack_forget()
+        self.frameLocal.pack_forget()
 
     def clickDiferido(self):
         self.botInicio.config(fg="white")
         self.botDiferido.config(fg="gray")
         self.botRegistros.config(fg="white")
+        self.botLocal.config(fg="white")
         self.documento.delete(0, tk.END)
         self.documento3.delete(0, tk.END)
         self.frameDiferido.pack(side=tk.TOP, pady=10)
         self.frameDatos.pack_forget()
         self.frameRegistros.pack_forget()
+        self.frameLocal.pack_forget()
 
     def clickRegistros(self):
         self.botInicio.config(fg="white")
         self.botDiferido.config(fg="white")
         self.botRegistros.config(fg="gray")
+        self.botLocal.config(fg="white")
         self.documento.delete(0, tk.END)
         self.documento2.delete(0, tk.END)
         self.fechaYHora.delete(0, tk.END)
@@ -452,7 +491,23 @@ class VentanaPrincipal(tk.Tk):
         self.frameRegistros.pack(fill=tk.BOTH)
         self.frameDiferido.pack_forget()
         self.frameDatos.pack_forget()
-    
+        self.frameLocal.pack_forget()
+ 
+    def clickLocal(self):
+        self.botInicio.config(fg="white")
+        self.botDiferido.config(fg="white")
+        self.botRegistros.config(fg="white")
+        self.botLocal.config(fg="gray")
+        self.documento.delete(0, tk.END)
+        self.documento2.delete(0, tk.END)
+        self.documento3.delete(0, tk.END)
+        self.fechaYHora.delete(0, tk.END)
+        self.observacion.delete("1.0", tk.END)
+        self.frameLocal.pack(side=tk.TOP, pady=10)
+        self.frameDiferido.pack_forget()
+        self.frameDatos.pack_forget()
+        self.frameRegistros.pack_forget()
+
     def expandir_menu(self):
         if self.menu_desplegado:
             self.menuLateral.pack_forget()
@@ -776,7 +831,6 @@ class VentanaPrincipal(tk.Tk):
                     'tipo': 'VALIDAR AGENTE',
                     'documento': documento
                 }
-                self.nombre_lugar()
 
                 # self.verificar_api()
                 try:
