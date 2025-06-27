@@ -74,7 +74,6 @@ class VentanaPrincipal(tk.Tk):
                     'dispositivo': mac
                 }
                 response = requests.post(self.api, data=data)
-                print(response.json())
                 if response.json()['status'] == 'success':
                     self.nombre_local = response.json()['local']
                     self.mensaje_api = response.json()['mensaje']
@@ -90,6 +89,9 @@ class VentanaPrincipal(tk.Tk):
         return self.after(60000, self.agregar_dispositivo)
             
     def verificar_api(self):
+        if not os.path.exists('config.ini'):
+            messagebox.showerror("Error de sistema", "Falta el config.ini en la raiz del programa.")
+            quit()
         try:
             respuesta = requests.get(self.api)
             if respuesta.status_code == 200:
@@ -99,12 +101,10 @@ class VentanaPrincipal(tk.Tk):
                 messagebox.showerror("Error de sistema", "Error al intentar conectar con la API, intente mas tarde.")
                 print(f"La API respondio con el codigo de estado: {respuesta.status_code}")
                 quit()
-                return True
         except requests.exceptions.RequestException as e:
             messagebox.showerror("Error de sistema", "Error al intentar conectar con la API, intente mas tarde.")
             print(f"Error al intentar conectar con la API: {e}")
             quit()
-            return True
 
     def insertar_registro(self, documento, archivo):
         cruce = ''
